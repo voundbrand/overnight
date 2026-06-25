@@ -28,32 +28,158 @@ SRC="${SIGNALS_REVIEW_SOURCE:-auto}"
 pr="$(gh pr view --json number --jq .number 2>/dev/null || true)"
 cr_verdict="?"
 
+# Portable temp file: prefer mktemp; in stripped environments that lack it, fall
+# back to a unique path under $TMPDIR / /tmp / . — so stderr capture (and thus the
+# error-not-clean and error-not-pass guards) keep working. If even that fails the
+# caller gets an empty path and the probe fails CLOSED to error, never clean/pass.
+_tmpfile() {
+  local d f i n
+  if command -v mktemp >/dev/null 2>&1; then
+    f="$(mktemp 2>/dev/null || true)"
+    if [ -n "$f" ] && : >"$f" 2>/dev/null; then
+      printf '%s\n' "$f"
+      return 0
+    fi
+  fi
+  for d in "${TMPDIR:-/tmp}" /tmp .; do
+    [ -d "$d" ] && [ -w "$d" ] || continue
+    for i in 1 2 3 4 5; do
+      n="$d/.agent-signals.$$.${RANDOM:-0}.$i.tmp"
+      [ -e "$n" ] && continue
+      ( set -C; : >"$n" ) 2>/dev/null && { printf '%s\n' "$n"; return 0; }
+    done
+  done
+  return 1
+}
+
+_print_file_head() {
+  [ -n "${1:-}" ] && [ -f "$1" ] || return 0
+  sed 's/^/    /' "$1" | head -5
+}
+
+_cleanup_file() {
+  [ -n "${1:-}" ] && rm -f "$1"
+}
+
+_stderr_is_no_checks() {
+  local f="$1"
+  [ -n "$f" ] && [ -s "$f" ] || return 1
+  if grep -qiE '(^|[^[:alpha:]])(error|failed|failure|fatal|network|timeout|timed out|auth|credential|forbidden|rate.?limit|HTTP|GraphQL|API|bad gateway|[45][0-9][0-9])([^[:alpha:]]|$)' "$f"; then
+    return 1
+  fi
+  grep -qiE '^[[:space:]]*(no checks reported|no commit statuses)([[:space:].!].*)?$' "$f"
+}
+
+run_cli_review() {
+  local outf errf rc
+  outf="$(_tmpfile || true)"
+  errf="$(_tmpfile || true)"
+  if [ -z "$outf" ] || [ -z "$errf" ]; then
+    echo "ERROR: could not create temp files for CodeRabbit CLI output — review did NOT run; NOT clean. Re-probe."
+    _cleanup_file "$outf"
+    _cleanup_file "$errf"
+    cr_verdict="error (tempfile)"
+    return
+  fi
+  coderabbit review --agent --base "$BASE" >"$outf" 2>"$errf"
+  rc=$?
+  [ -s "$outf" ] && cat "$outf"
+  if [ "$rc" -ne 0 ]; then
+    echo "ERROR: CodeRabbit CLI FAILED (exit $rc) — review did NOT run; NOT clean. Re-probe."
+    _print_file_head "$errf"
+    cr_verdict="error (auth/credits/file-limit)"
+  elif [ -s "$errf" ]; then
+    echo "ERROR: CodeRabbit CLI wrote to stderr despite exit 0 — review result is not trustworthy; NOT clean. Re-probe."
+    _print_file_head "$errf"
+    cr_verdict="error (stderr)"
+  elif [ ! -s "$outf" ]; then
+    echo "ERROR: CodeRabbit CLI produced no output despite exit 0 — review result is not trustworthy; NOT clean. Re-probe."
+    cr_verdict="error (empty)"
+  else
+    cr_verdict="ran (classify findings above)"
+  fi
+  _cleanup_file "$outf"
+  _cleanup_file "$errf"
+}
+
 echo "============================================================"
 echo " AGENT SIGNALS — branch=$branch  base=$BASE  pr=${pr:-none}"
 echo "============================================================"
 
 # Read CodeRabbit App feedback from the PR thread (credit-free) ------------------
 read_app_review() {
-  local owner repo inprog lines count
+  local owner repo inprog lines count rc errf
+  errf="$(_tmpfile || true)"
+  if [ -z "$errf" ]; then
+    echo "ERROR: could not create temp file for CodeRabbit PR-thread lookup — review did NOT run; NOT clean. Re-probe."
+    cr_verdict="error"; return
+  fi
   inprog="$(gh pr view "$pr" --json comments,reviews --jq '
     [ (.comments[]?, .reviews[]?) | select(.author.login | test("coderabbit"; "i")) | .body // "" ]
     | map(select(test("Come back again in a few minutes|currently reviewing|review in progress"; "i")))
-    | length' 2>/dev/null || echo 0)"
+    | length' 2>"$errf")"
+  rc=$?
+  if [ "$rc" -ne 0 ] || ! printf '%s' "$inprog" | grep -qE '^[0-9]+$'; then
+    echo "ERROR: could not read CodeRabbit PR review status (gh pr view exit $rc) — review did NOT run; NOT clean. Re-probe."
+    _print_file_head "$errf"
+    _cleanup_file "$errf"
+    cr_verdict="error"; return
+  fi
+  _cleanup_file "$errf"
   if [ "${inprog:-0}" -gt 0 ]; then
     echo "CodeRabbit review IN PROGRESS on PR #$pr — re-probe in a few minutes."
     cr_verdict="in-progress"; return
   fi
-  owner="$(gh repo view --json owner --jq .owner.login 2>/dev/null)"
-  repo="$(gh repo view --json name --jq .name 2>/dev/null)"
+  owner="$(gh repo view --json owner --jq .owner.login 2>/dev/null || true)"
+  repo="$(gh repo view --json name --jq .name 2>/dev/null || true)"
+  if [ -z "$owner" ] || [ -z "$repo" ]; then
+    echo "ERROR: could not resolve owner/repo via gh (auth/network?) — review did NOT run; NOT clean. Re-probe."
+    cr_verdict="error"; return
+  fi
+  # Capture the API exit code + stderr so a FAILED fetch (network/rate-limit/auth)
+  # is never mistaken for 'no findings': errors go to stderr and leave stdout empty,
+  # and an empty result AFTER a failed call is NOT 'clean'.
+  errf="$(_tmpfile || true)"
+  if [ -z "$errf" ]; then
+    echo "ERROR: could not create temp file for CodeRabbit review fetch — review did NOT run; NOT clean. Re-probe."
+    cr_verdict="error"; return
+  fi
   lines="$(gh api graphql -F owner="$owner" -F repo="$repo" -F pr="$pr" -f query='
     query($owner:String!,$repo:String!,$pr:Int!){repository(owner:$owner,name:$repo){
       pullRequest(number:$pr){reviewThreads(first:100){nodes{
         isResolved isOutdated comments(first:1){nodes{body path line author{login}}}}}}}}' \
-    --jq '.data.repository.pullRequest.reviewThreads.nodes[]
+    --jq 'if (((.errors // []) | length) > 0) then
+            "ERROR_GRAPHQL " + ((.errors // []) | map(.message // tostring) | join("; "))
+          elif (.data.repository.pullRequest.reviewThreads.nodes == null) then
+            "ERROR_GRAPHQL missing reviewThreads in GraphQL response"
+          else
+            .data.repository.pullRequest.reviewThreads.nodes[]
           | select(.isResolved==false and .isOutdated==false)
-          | .comments.nodes[0]
-          | select(.author.login | test("coderabbit"; "i"))
-          | "  - \(.path):\(.line // "?")  \((.body | split("\n"))[0])"' 2>/dev/null || true)"
+          | (.comments.nodes[0] // empty)
+          | select((.author.login // "") | test("coderabbit"; "i"))
+          | "  - \(.path):\(.line // "?")  \((.body | split("\n"))[0])"
+          end' 2>"$errf")"
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    echo "ERROR: CodeRabbit review fetch FAILED (gh api exit $rc) — review did NOT run; NOT clean. Re-probe."
+    _print_file_head "$errf"
+    _cleanup_file "$errf"
+    cr_verdict="error"; return
+  fi
+  if printf '%s\n' "$lines" | grep -q '^ERROR_GRAPHQL '; then
+    echo "ERROR: CodeRabbit review fetch returned GraphQL errors — review did NOT run; NOT clean. Re-probe."
+    printf '%s\n' "$lines" | grep '^ERROR_GRAPHQL ' | sed 's/^ERROR_GRAPHQL /    /' | head -5
+    _print_file_head "$errf"
+    _cleanup_file "$errf"
+    cr_verdict="error"; return
+  fi
+  if [ -s "$errf" ] && [ -z "$lines" ]; then
+    echo "ERROR: CodeRabbit review fetch wrote stderr with no review output — review result is not trustworthy; NOT clean. Re-probe."
+    _print_file_head "$errf"
+    _cleanup_file "$errf"
+    cr_verdict="error"; return
+  fi
+  _cleanup_file "$errf"
   count="$(printf '%s\n' "$lines" | grep -c '^  - ' || true)"
   if [ "${count:-0}" = "0" ]; then
     echo "No unresolved CodeRabbit review threads on PR #$pr — clean (Pro line-by-line)."
@@ -77,13 +203,11 @@ case "$SRC" in
     else read_app_review; fi ;;
   cli)
     if ! command -v coderabbit >/dev/null 2>&1; then echo "coderabbit CLI not found (see AGENTS.md)."; cr_verdict="unavailable"
-    elif coderabbit review --agent --base "$BASE"; then cr_verdict="ran (classify findings above)"
-    else cr_verdict="error (auth/credits/file-limit)"; fi ;;
+    else run_cli_review; fi ;;
   auto|*)
     # Pro: credit-free line-by-line via the App once a PR exists; local CLI before that.
     if [ -n "${pr:-}" ]; then read_app_review
-    elif command -v coderabbit >/dev/null 2>&1 && coderabbit review --agent --base "$BASE"; then
-      cr_verdict="ran (classify findings above)"
+    elif command -v coderabbit >/dev/null 2>&1; then run_cli_review
     else echo "no PR + no usable CLI review."; cr_verdict="unavailable"; fi ;;
 esac
 
@@ -93,14 +217,33 @@ echo "## 2. GitHub Actions checks (required-checks signal)"
 ci="none"
 if [ -n "${pr:-}" ]; then
   echo "PR #$pr"
-  gh pr checks "$pr" 2>/dev/null || true
-  total="$(gh pr checks "$pr" --json bucket --jq 'length' 2>/dev/null || echo 0)"
-  fails="$(gh pr checks "$pr" --json bucket --jq '[.[]|select(.bucket=="fail")]|length' 2>/dev/null || echo 0)"
-  pend="$(gh pr checks "$pr" --json bucket --jq '[.[]|select(.bucket=="pending")]|length' 2>/dev/null || echo 0)"
-  if   [ "${total:-0}" = "0" ]; then ci="no-checks"
-  elif [ "${fails:-0}" -gt 0 ]; then ci="fail"
-  elif [ "${pend:-0}" -gt 0 ]; then ci="pending"
-  else ci="pass"; fi
+  gh pr checks "$pr" 2>/dev/null || true   # human-readable table (display only)
+  # Single status query. A successful query prints "<total> <fails> <pend>" (all
+  # integers) to stdout EVEN when checks fail/pend (gh exits 8 — not an error). A
+  # real failure (network/auth) writes to stderr and leaves stdout empty, so an
+  # empty/non-numeric result is NOT 'pass' and NOT 'no-checks' -> ci=error.
+  cerr="$(_tmpfile || true)"
+  if [ -z "$cerr" ]; then
+    echo "ERROR: could not create temp file for CI checks — NOT pass. Re-probe."
+    ci="error"
+  else
+    csum="$(gh pr checks "$pr" --json bucket --jq '"\(length) \([.[]|select(.bucket=="fail")]|length) \([.[]|select(.bucket=="pending")]|length)"' 2>"$cerr")"
+    rc=$?
+    if { [ "$rc" -eq 0 ] || [ "$rc" -eq 8 ]; } && printf '%s' "$csum" | grep -qE '^[0-9]+ [0-9]+ [0-9]+$'; then
+      read -r total fails pend <<<"$csum"
+      if   [ "$total" = "0" ]; then ci="no-checks"
+      elif [ "$fails" -gt 0 ]; then ci="fail"
+      elif [ "$pend"  -gt 0 ]; then ci="pending"
+      else ci="pass"; fi
+    elif _stderr_is_no_checks "$cerr"; then
+      ci="no-checks"
+    else
+      ci="error"
+      echo "ERROR: could not read CI checks (gh failed) — NOT pass. Re-probe."
+      _print_file_head "$cerr"
+    fi
+    _cleanup_file "$cerr"
+  fi
 else
   ci="no-pr"
   echo "No open PR for '$branch'. Open a DRAFT PR so CI runs (and the App reviews):"
@@ -112,7 +255,15 @@ echo
 echo "============================================================"
 echo "SIGNALS  ci=$ci  coderabbit=$cr_verdict"
 echo "EXIT WHEN: coderabbit=clean (no actionable findings) AND ci=pass -> stop, report ready."
+echo "  coderabbit=error -> the review did NOT run (network/rate-limit/auth); re-probe — NEVER treat as clean."
 echo "  coderabbit=in-progress / ci=pending -> wait, re-probe."
+echo "  ci=error -> CI status could not be read (network/auth); re-probe — do NOT treat as pass."
 echo "  ci=no-pr -> open a draft PR first (command above)."
 echo "  Merge stays HUMAN-GATED."
 echo "============================================================"
+
+case "$cr_verdict" in
+  error*) exit 2 ;;
+esac
+[ "$ci" = "error" ] && exit 2
+exit 0
