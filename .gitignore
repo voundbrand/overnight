@@ -1,0 +1,20 @@
+# OS junk
+.DS_Store
+**/.DS_Store
+
+# Node (the plan-wiki template builds with node)
+node_modules/
+*.tsbuildinfo
+
+# Generated wiki output (canonical source is the plan markdown)
+**/dist/
+.vercel/
+
+# Local agent/runtime tooling state
+/.context/
+/.gstack/
+
+# Secrets — never commit
+.env
+.env.*
+!.env.example

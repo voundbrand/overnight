@@ -1,0 +1,9 @@
+# If you rename the repo, update the URLs below.
+blank_issues_enabled: false
+contact_links:
+  - name: 📖 Docs & quickstart
+    url: https://github.com/voundbrand/overnight/tree/main/docs
+    about: Read how-it-works, quickstart, configuration, and the FAQ before filing.
+  - name: 💬 Questions & ideas
+    url: https://github.com/voundbrand/overnight/discussions
+    about: For open-ended questions and discussion (enable Discussions in repo settings).

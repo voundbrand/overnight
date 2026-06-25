@@ -1,0 +1,66 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+#
+# CodeRabbit config TEMPLATE for Overnight.
+# Rename this file to `.coderabbit.yaml` after customizing it for your repo.
+#
+# CodeRabbit is the recursive PR reviewer that drives the overnight agent loop
+# (.claude/skills/overnight-agent-runbook). It re-reviews on every push, so its
+# comments ARE the loop's feedback. The free GitHub App gives credit-free,
+# line-by-line review on Pro; the `cr` CLI runs the same review locally. If you
+# don't use CodeRabbit, the loop falls back to a fresh independent reviewer
+# session — the mechanics are identical, only the reviewer changes.
+#
+# Repo rules live in AGENTS.md (+ your DECISION_LOG if you keep one).
+language: en-US
+
+reviews:
+  profile: assertive
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  collapse_walkthrough: false
+  auto_review:
+    enabled: true
+    drafts: true # the runbook opens DRAFT PRs early — review them so the loop has feedback
+    base_branches:
+      # Default base is `main`. Any non-main base also works — list it here.
+      - main
+  path_filters:
+    # Skip generated / vendored output so the reviewer only sees source.
+    - "!**/dist/**"
+    - "!**/build/**"
+    - "!**/node_modules/**"
+  path_instructions:
+    # Repo-wide review discipline. This is the one rule you almost always want.
+    - path: "**"
+      instructions: >-
+        Follow AGENTS.md. Order findings: correctness bugs first, then
+        reuse/simplification (duplicated operational logic AND over-abstraction),
+        then tests (a behavior change needs a public-seam test; a bug fix needs a
+        regression test; flag vacuous assertions). Apply the service-layer rule:
+        actions own the why/when (rules, state, auth, error classification); the
+        service layer owns the how (reusable ops, provider calls) with explicit
+        params and structured returns, never reaching into DB/state. Keep findings
+        high-confidence; no drive-by rewrites.
+    # --- How to add more targeted instructions -------------------------------
+    # Add one block per path glob to give the reviewer extra context for a
+    # specific area of the codebase. A few example patterns:
+    #
+    # - path: "src/**/*.ts"
+    #   instructions: >-
+    #     Prefer explicit return types on exported functions. Tests must assert
+    #     observable behavior, not implementation details.
+    #
+    # - path: "**/*.md"
+    #   instructions: >-
+    #     Docs. Don't flag a terse index row as incomplete if a linked detail doc
+    #     covers it.
+    #
+    # - path: "<your-frozen-seam>/**"
+    #   instructions: >-
+    #     If you have a frozen/stable API boundary, describe its invariants here so
+    #     the reviewer treats signature changes as contract edits, not local tweaks.
+    # -------------------------------------------------------------------------
+
+chat:
+  auto_reply: true

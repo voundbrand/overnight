@@ -1,0 +1,73 @@
+# EXAMPLE CI — replace the build/lint/test steps below with your own stacks.
+# This is a starting point, not a turnkey workflow: the placeholder steps below
+# (`echo ...`) do nothing until you swap in your real commands.
+#
+# Why this exists: the "required checks" are the signal the overnight agent loop
+# waits on. The runbook (.claude/skills/overnight-agent-runbook) drives each
+# agent off the PR's review comments (CodeRabbit) AND its check status; this
+# workflow is the latter. Keep your jobs mirroring the gates you already verify
+# locally, so green here == the same green an agent sees from
+# `gh pr view --json statusCheckRollup`.
+#
+# Keep it fast and deterministic, and run on every PR to main (no path filters)
+# so a required check never hangs "pending" on an unrelated change.
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # A single required check is enough to gate the loop. Add more jobs if your
+  # project splits gates (e.g. a separate lint job, an integration suite); each
+  # one you mark "required" in branch protection becomes a gate the agent waits
+  # on before closeout.
+  build:
+    name: build / lint / test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # --- Replace the steps below with your stack -----------------------------
+      # Examples (delete what you do not use; add what you do):
+      #
+      #   Node/JS:
+      #     - uses: actions/setup-node@v5
+      #       with: { node-version: "22" }
+      #     - run: npm ci
+      #     - run: npm run lint
+      #     - run: npm test
+      #
+      #   Python:
+      #     - uses: actions/setup-python@v5
+      #       with: { python-version: "3.12" }
+      #     - run: pip install -r requirements.txt
+      #     - run: ruff check .
+      #     - run: pytest
+      #
+      #   Go:
+      #     - uses: actions/setup-go@v5
+      #       with: { go-version: "1.22" }
+      #     - run: go vet ./...
+      #     - run: go test ./...
+      # -------------------------------------------------------------------------
+      - name: Install dependencies
+        run: |
+          echo "TODO - install your project's dependencies"
+
+      - name: Lint
+        run: |
+          echo "TODO - run your linter (warnings = errors is a good default)"
+
+      - name: Test
+        run: |
+          echo "TODO - run your test suite"

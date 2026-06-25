@@ -1,0 +1,57 @@
+<!-- Paste this section into your repo's AGENTS.md or CLAUDE.md and fill the knobs
+     table. It points agents at the overnight runbook and states that there is no
+     board/dispatcher model, so nobody rebuilds one. A filled-in version is in
+     AGENTS.example.md. -->
+
+## Autonomous / overnight work
+
+Unattended implementation work follows `.claude/skills/overnight-agent-runbook/SKILL.md`:
+pick one reviewable slice, own the branch through an agnostic code review, push to
+your own task branch, and open a **draft** PR for visibility. **The pull request and
+its review drive the agent** — the PR's review state is the work queue; there is no
+separate review thread. Continue through the next launch-ready independent slice
+after each green/clean slice. If no row is launch-ready, author the missing per-slice
+brief / Writes / Verify readiness surface for the next best candidate, then implement
+it if the prep makes it launch-ready. Stop only when no row can be implemented or made
+ready without human-gated input that blocks all safe progress, or a human gate is hit.
+Do not set a voluntary agent token/turn budget for overnight work; let
+provider/account usage settings be the runtime limit. Human input is not automatically
+blocking: prepare the decision packet, record reversible assumptions/options, and move
+to independent work when possible. Correctness comes from the review loop, not a
+coordination board.
+
+"Continue overnight" means continue from durable branch/PR/task state, not from one
+ever-growing chat transcript. After each green/clean slice, write a compact closeout,
+push the branch, and start the next slice from a fresh agent session when using a
+UI-backed runtime (e.g. Conductor). The next session re-orients from the current
+branch/head, draft PR, task queue, committed per-slice brief, and the
+`scripts/agent-signals.sh` probe output. This is transcript hygiene, not a token/turn
+budget.
+
+Each turn, gather both feedback signals with one probe — `scripts/agent-signals.sh
+[base]` (default base `origin/main`) — which reads the CodeRabbit review and the CI
+checks and prints a `SIGNALS ci=… coderabbit=…` line plus the exit condition.
+Classify each finding (actionable | invalid | duplicate | blocked | out-of-scope);
+fix only the valid actionable ones plus any failing check; push a new head; repeat
+until `coderabbit=clean` and `ci=pass` and required approvals are present.
+
+There is no kanban board, dispatcher loop, polling daemon, or required status file.
+Do not build one. Select work directly from the task queue, claim a row by setting
+`IN-PROGRESS` + `Owner` before coding, and report the closeout in the final response.
+
+Project configuration (fill these in):
+
+| Knob | Value |
+|---|---|
+| Base branch | `origin/main` |
+| Remote / PR surface | `GitHub gh` (draft PRs only) — or Azure DevOps `az repos` / GitLab / local-only |
+| Review tool | `CodeRabbit App + cr CLI` — or a fresh independent reviewer session |
+| Quality lens source | `docs/quality-lenses.md` |
+| Task source of truth | `implementation_plans/<plan>/TASK_QUEUE.md` |
+
+Agents may merge/integrate only agent-owned **non-`main`** branches after green
+gates. Human-gated (stop and wait): merge/complete a PR to `main` or any protected
+base, create a non-draft PR targeting `main`, bypass policies, modify protected
+branches, delete branches, rewrite history, change credentials, mutate
+approval-sensitive cloud resources, touch real client data, spend money, or send
+external communications.
