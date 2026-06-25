@@ -13,13 +13,7 @@ overnight, with no kanban board, no dispatcher, and no polling daemon.
 
 ![The review-driven loop: open a draft PR, probe CodeRabbit + CI, fix the valid findings, push, re-review until clean and green — then leave it for a human to merge.](docs/demo.gif)
 
-<sub>The loop end-to-end — regenerate it with <a href="demo/">VHS</a> (<code>cd demo && vhs demo.tape</code>).</sub>
-
 </div>
-
-> **Renaming:** "Overnight" is a working name. To rebrand, change the title here and
-> in `docs/`, and (optionally) rename the repo. No code paths depend on the name —
-> skills are referenced by their `.claude/skills/<name>/` paths, not the project name.
 
 ---
 
