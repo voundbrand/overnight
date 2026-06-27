@@ -87,6 +87,12 @@ change or rotate credentials, mutate approval-sensitive cloud resources, spend
 money, or send external communications without a human. Anything money-, data-,
 or identity-sensitive is a hard human gate.
 
+That safety envelope is about workflow, review, and merge authority. Git branches
+and worktrees are not an OS-level sandbox: they isolate repository state, but they
+do not stop a local agent process from reading files elsewhere on the machine.
+If you need filesystem isolation, run the harness in a container or sandbox that
+mounts only the project, or configure the harness's local permission controls.
+
 ## What is "readiness-prep"?
 
 When **no task row is launch-ready**, the agent doesn't stop — it authors the

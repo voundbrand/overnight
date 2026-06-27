@@ -28,6 +28,21 @@ from the current branch/head, draft PR, task queue, committed per-slice brief,
 and review/check probe output. This is transcript hygiene, not a token/turn
 budget.
 
+Use quiet overnight mode for unattended sessions. Do not stream routine agent
+discussion, long logs, full diffs, repeated probe output, or step-by-step
+narration into chat. The durable log is the branch, commits, draft PR, task rows,
+briefs, and validation artifacts. Surface only compact evidence needed by the
+goal evaluator, blockers, and the final closeout.
+
+Parallel/background orchestration also needs a runtime reliability profile. Before
+spawning long-running implementation agents, apply `docs/runtime-reliability.md`:
+raise or disable any background-agent no-progress watchdog, run cold builds/tests
+via a background shell/task path whose logs can be polled, and share build caches
+across worktrees. For Rust worktrees, set a local
+`CARGO_TARGET_DIR=/path/to/repo/.shared-cargo-target` and pre-warm it. If a
+socket/API error loses the transcript, resume from durable branch/PR/task state
+and re-run `scripts/agent-signals.sh origin/main`.
+
 There is no kanban board, dispatcher loop, polling daemon, or required status
 file. Do not build one. Select work directly from the task queue / work-forward
 key, claim a row by setting `IN-PROGRESS` + `Owner` before coding, and report
@@ -36,32 +51,35 @@ closeout in the final response.
 ### The two signals, one probe
 
 Drive every iteration off `scripts/agent-signals.sh origin/main`. It gathers both
-feedback signals — the **CodeRabbit review** (comment signal) and the **GitHub
-Actions checks** (required-check signal) — and prints one verdict line:
+feedback signals — **code review** (CodeRabbit when requested, or internal
+review) and the **GitHub Actions checks** (required-check signal) — and prints
+one verdict line:
 
 ```bash
 scripts/agent-signals.sh origin/main
 # ... per-signal detail ...
-# SIGNALS  ci=pass  coderabbit=clean
-# EXIT WHEN: coderabbit=clean (no actionable findings) AND ci=pass -> stop, report ready.
+# SIGNALS  ci=pass  coderabbit=not-requested  internal=clean  review=clean
+# EXIT WHEN: review=clean (CodeRabbit or internal reviewer) AND ci=pass -> stop, report ready.
 ```
 
 Each turn: run the probe, **classify** every finding (`actionable | invalid |
 duplicate | blocked | out-of-scope`), fix only the valid actionable ones plus any
-failing check, push a new head — which re-triggers CodeRabbit and CI — then
-re-probe. Repeat until `coderabbit=clean AND ci=pass` and the required approvals
-exist. Knobs: `SIGNALS_REVIEW_SOURCE=auto|app|cli` and `SIGNALS_SKIP_REVIEW=1`.
+failing check, push a new head — which re-runs CI and any requested review — then
+re-probe. Repeat until `review=clean AND ci=pass` and the required approvals
+exist. Knobs: `SIGNALS_REVIEW_SOURCE=auto|app|cli`,
+`SIGNALS_INTERNAL_REVIEW_COMMAND`, `SIGNALS_CODERABBIT_LABEL`, and
+`SIGNALS_SKIP_REVIEW=1`.
 
 ## Project configuration
 
-This repo is **`<owner>/<repo>`** on GitHub, reviewed by **CodeRabbit**. The
-values below are pinned once here so an unattended agent never has to guess them.
+This repo is **`<owner>/<repo>`** on GitHub. The values below are pinned once
+here so an unattended agent never has to guess them.
 
 | Knob | Value |
 |---|---|
 | Base branch | `origin/main` (any non-main base also works — set it once) |
 | Remote / PR surface | GitHub `gh`, **draft PRs only** (Azure DevOps `az repos` / GitLab / local-only also work) |
-| Review tool | CodeRabbit — GitHub App (credit-free line-by-line on Pro) + `cr` CLI; a fresh independent reviewer session is the fallback |
+| Review tool | Fresh independent reviewer by default; CodeRabbit App by `coderabbit-ready` label; `cr` CLI only when deliberate |
 | Quality lens source | `docs/quality-lenses.md` |
 | Task source of truth | `implementation_plans/<plan>/TASK_QUEUE.md` |
 
@@ -115,12 +133,12 @@ implementation_plans/<plan>/TASK_QUEUE.md merged into its agent-owned
 integration branch, with the main-targeted draft PR left ready for a human
 
 verified by scripts/agent-signals.sh origin/main printing
-"SIGNALS ci=pass coderabbit=clean" with required approvals present
+"SIGNALS ci=pass ... review=clean" with required approvals present
 
 while preserving the public API contract and the green test suite.
 
 Base: origin/main. Remote/PR: GitHub gh, draft PRs only.
-Review: CodeRabbit App threads (or `cr --agent --base origin/main`) on each head.
+Review: fresh independent reviewer by default; CodeRabbit App threads only when the PR is marked `coderabbit-ready`.
 Iterate: re-probe, classify findings, fix valid actionable ones, push, re-probe.
 Boundaries: merge/integrate only agent-owned non-main branches after green gates;
 keep main landing, history rewrite, credentials, and external sends human-gated.

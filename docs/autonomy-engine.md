@@ -5,9 +5,10 @@ is not a daemon, a dispatcher, or a coordination board. It is a **persistence lo
 an after-each-turn check that re-continues the thread until the pull request's exit
 condition holds, instead of stopping after one turn.
 
-The recursion on the *review* side is already automatic: CodeRabbit re-reviews each
-push and CI re-runs each head, so every turn has fresh signals to act on (see
-**[docs/how-it-works.md](how-it-works.md)** and `scripts/agent-signals.sh`). The
+The recursion on the *review* side can be automatic (for example, a CodeRabbit App
+review on PRs marked ready) or explicit (a fresh independent reviewer command or
+session per head). CI re-runs each pushed head, so every turn has fresh signals to
+act on (see **[docs/how-it-works.md](how-it-works.md)** and `scripts/agent-signals.sh`). The
 persistence loop is the other half — the thing that keeps the agent *coming back* to
 read those signals and fix the next finding until there is nothing left to fix.
 
@@ -26,7 +27,7 @@ AND required approvals present.** One probe gathers both feedback signals each t
 
 ```bash
 scripts/agent-signals.sh [base]    # default base: origin/main
-# → SIGNALS ci=… coderabbit=…  + the exit condition
+# → SIGNALS ci=… coderabbit=… internal=… review=…  + the exit condition
 ```
 
 Each turn the agent runs the probe, classifies any new findings (actionable /
@@ -61,6 +62,21 @@ this:
 
 This is transcript hygiene, not a token budget — see the rule below.
 
+### Quiet overnight mode
+
+In Conductor and other UI-backed runtimes, the loop should be quiet by default.
+Do not stream routine agent discussion, step-by-step narration, full diffs, long
+logs, or repeated raw probe output into chat. Treat chat as the control surface;
+the durable log is the branch, commits, draft PR, task rows, committed briefs,
+and validation artifacts.
+
+During normal progress, surface only compact evidence needed by the goal
+evaluator: the current head/PR when it changes, the `SIGNALS ...` verdict line or
+a short validation summary, blockers, and the final closeout. If a provider needs
+transcript-visible proof, emit the smallest stable summary that proves the state
+instead of raw command output. Put bulky diagnostics in files or PR comments and
+reference them from the closeout.
+
 ---
 
 ## The six-field contract
@@ -71,7 +87,7 @@ right column shows what each looks like for a concrete **implementation thread**
 | Field | For an implementation thread |
 |---|---|
 | **Outcome** | The current piece is approved + green, and the thread then advances through the next launch-ready pieces; if none is launch-ready, it creates the missing readiness brief/backfill for the next candidate and proceeds when ready. |
-| **Verification surface** | Review clean (CodeRabbit / reviewer), required checks pass, required approvals present — demonstrated by running the probe and surfacing its output. |
+| **Verification surface** | Review clean (CodeRabbit / reviewer), required checks pass, required approvals present — demonstrated by running the probe and surfacing a compact verdict. |
 | **Constraints** | What must not regress: public contracts, security posture, existing tests, performance. |
 | **Boundaries** | Owned files, base branch, allowed tools/providers; **never merge or push to `main`/protected base**. |
 | **Iteration policy** | Each turn, address the latest unresolved review comments / failing checks, push, request re-review; after green/clean, integrate only to an allowed non-`main` branch or leave the `main`-targeted PR ready, then claim the next launch-ready row or create the missing readiness brief/backfill. |
@@ -124,17 +140,17 @@ claude -p "/goal <six-field contract>"
 > not run commands or read files.**
 
 So the completion condition must be something the agent **demonstrates
-in-conversation**: each turn it has to *run the probe and surface the output*, so the
-evaluator can see the green signals. Phrase the condition around observable evidence,
-not internal belief.
+in-conversation**: each turn it has to *run the probe and surface compact
+evidence*, so the evaluator can see the green signals without a raw log dump.
+Phrase the condition around observable evidence, not internal belief.
 
 ```text
 # Good — demonstrable in the transcript:
 /goal PR <url> has all required checks green, no unresolved review comments, and the
 required approvals — shown each turn by running
 `scripts/agent-signals.sh origin/main` (or `gh pr view --json
-statusCheckRollup,reviewDecision,reviews`) and pasting the reviewer + check output
-into this conversation. Never merge or push to main.
+statusCheckRollup,reviewDecision,reviews`) and summarizing the reviewer + check
+verdict in this conversation. Never merge or push to main.
 
 # Bad — the evaluator can't see this; it can't run anything:
 /goal make the PR pass review and CI
@@ -241,7 +257,10 @@ progress remains, or a human gate is hit.
 ### Checklist before launching unattended
 
 - [ ] Outcome is an observable state, not a task list.
-- [ ] Verification commands are named and runnable, and surfaced in-transcript each turn.
+- [ ] Verification commands are named and runnable, and compact evidence is surfaced
+  in-transcript each turn.
+- [ ] Quiet overnight mode is explicit: no routine narration, long logs, full
+  diffs, or repeated raw probe dumps in chat.
 - [ ] In-scope and out-of-scope rows/files are explicit.
 - [ ] Base branch and PR surface are stated.
 - [ ] Human-gated actions are named (never merge/push to `main`).

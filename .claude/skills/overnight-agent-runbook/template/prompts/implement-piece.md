@@ -7,14 +7,20 @@ Seed this as the thread's native `/goal` (see the runbook's "Autonomy Engine").
 On **Codex**, use the full contract below; completion is evidence-checked. On
 **Claude Code**, set `/goal` with a condition the agent demonstrates in the
 transcript — it must run `gh pr view --json statusCheckRollup,reviewDecision,reviews`
-(or the `az repos` / GitLab equivalent) and surface the reviewer output each turn,
-since the evaluator only reads the conversation — and run with auto mode. Do not
-add a `stop after N turns` clause or token budget unless the user explicitly
-requests a cap; let provider/account usage settings be the runtime limit. The
-heartbeat is the fallback only if a provider has no native goal. For Conductor or
+(or the `az repos` / GitLab equivalent) and surface a compact reviewer/check
+verdict each turn, since the evaluator only reads the conversation — and run with
+auto mode. Do not add a `stop after N turns` clause or token budget unless the
+user explicitly requests a cap; let provider/account usage settings be the
+runtime limit. The heartbeat is the fallback only if a provider has no native goal. For Conductor or
 another UI-backed runtime, do not run many completed slices through one long-lived
 chat tab: after a slice is green/clean, push and close it out, then start the next
 slice in a fresh session seeded from branch/PR/task state.
+
+Before long validation or parallel/background launches, apply
+`docs/runtime-reliability.md` if present. In particular, do not hide a cold build
+inside one nested background agent call if the harness has a no-progress watchdog;
+run it through a background shell/task path whose logs can be polled, and share
+build caches across worktrees where possible.
 
 ```text
 /goal Implementation-plan autonomy continues until all independent pieces in
@@ -58,6 +64,10 @@ state):
 - Keep transcript output compact. Do not paste long logs, full diffs, or repeated
   probe output into chat; write bulky diagnostics to files and summarize the
   evidence in the closeout.
+- Run in quiet overnight mode: no routine progress narration or agent discussion
+  in chat. Use commits, PR state, task rows/briefs, and validation artifacts as
+  the durable log. Surface only compact evidence needed by the goal evaluator,
+  blockers, and the final closeout.
 
 Human-gated (stop and wait): merge/complete PR to `main` or protected base,
 non-draft PR targeting `main`, policy bypass, protected branches, branch deletion,

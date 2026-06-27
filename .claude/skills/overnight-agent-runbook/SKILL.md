@@ -93,6 +93,21 @@ agent must still keep output compact, avoid dumping long logs/diffs into chat,
 write bulky diagnostics to files, and pause after a green slice with a precise
 restart prompt for the next fresh session.
 
+### Quiet overnight mode
+
+In Conductor and other UI-backed runtimes, overnight sessions should run quiet by
+default. Do not stream routine agent discussion, step-by-step narration, full
+diffs, long logs, or repeated raw probe output into chat. The durable log is the
+branch, commits, draft PR, task queue row, committed brief, and validation
+artifacts; chat is only the control surface.
+
+During normal progress, emit only compact evidence needed to keep the goal loop
+honest: the current head/PR when it changes, the `SIGNALS ...` verdict line or a
+short validation summary, blockers, and the slice closeout. If a provider's goal
+evaluator requires transcript-visible proof, surface the smallest stable summary
+that proves the state instead of pasting raw command output. Put bulky diagnostic
+details in files or PR comments and reference them from the closeout.
+
 ## The Engine: A PR Comment Loop
 
 However many agents or PRs a thread carries, each PR is driven the same way: loop
@@ -160,15 +175,17 @@ your agent runtime provides:
 - **A scheduled re-prompt** otherwise — a cron job, a `/loop`, or a Stop hook that
   re-sends the same contract every N minutes until the exit condition holds.
 
-Either way the condition is the same contract (below). The recursion on the
-*review* side is already automatic: CodeRabbit re-reviews each push, so each turn
-has fresh comments to act on.
+Either way the condition is the same contract (below). The review side may be
+automatic (CodeRabbit or another app re-reviews marked heads) or explicit (a fresh
+independent reviewer command/session runs on each pushed head). Each turn still
+needs fresh review evidence to act on.
 
 The persistence loop must respect session rollover. For a single slice, it may
 re-continue the same session until that slice is green/clean or blocked. When the
 slice is complete, the next iteration should be a fresh session seeded from the
-branch/PR/task state above, especially in any runtime that stores and renders the
-full transcript locally.
+branch/PR/task state above, especially in Conductor or any runtime that stores and
+renders the full transcript locally. Keep every loop iteration quiet unless it is
+reporting compact evidence, a blocker, or a closeout.
 
 Write every Goal as the same **contract** (the structure behind the prompt
 library and the six-field standard below):
@@ -201,12 +218,14 @@ yes. One goal per session; `/goal` to check, `/goal clear` to stop.
 
 Key difference — **the evaluator only judges what is in the transcript; it does
 not run commands or read files.** So phrase the condition as something the agent
-*demonstrates in-conversation*: it must run the check and surface the output each
-turn. Good: "PR `<url>` has all required checks green, no unresolved review
-comments, and required approvals — shown by running `gh pr view --json
-statusCheckRollup,reviewDecision,reviews` and the reviewer output in this
-conversation." Name the constraints that must not change and pair with **auto
-mode** so tool calls run unattended. Do not include `stop after N turns` unless
+*demonstrates in-conversation*: it must run the check and surface compact evidence
+each turn, such as one `SIGNALS ...` verdict line plus any blocker summary. Good:
+"PR `<url>` has all required checks green, no unresolved review comments, and
+required approvals — shown by running `scripts/agent-signals.sh <base>` or
+`gh pr view --json statusCheckRollup,reviewDecision,reviews` and summarizing the
+review/check verdict in this conversation." Name the constraints that must not
+change and pair with **auto mode** so tool calls run unattended. Do not include
+`stop after N turns` unless
 the user explicitly asks for a bounded run. Condition limit: 4,000 chars. Works headless:
 `claude -p "/goal …"`.
 

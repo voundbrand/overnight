@@ -34,6 +34,18 @@ the branch/head, draft PR, task queue, committed brief, and review/check probe
 output. If the runtime cannot spawn a new session automatically, pause with an
 exact restart prompt instead of letting one transcript grow without bound.
 
+Quiet overnight mode: do not stream routine agent discussion, step-by-step
+narration, long logs, full diffs, or repeated raw probe output into chat. Use
+commits, PR state, task rows/briefs, and validation artifacts as the durable log.
+Surface only compact evidence needed by the goal evaluator, blockers, and the
+final closeout.
+
+Runtime reliability: before spawning parallel/background implementation sessions,
+apply docs/runtime-reliability.md if present. Raise/disable any background-agent
+no-progress watchdog for long agents, run cold builds/tests via a background
+shell/task path whose logs can be polled, and share build caches across worktrees
+(for Rust, set a local CARGO_TARGET_DIR and pre-warm it).
+
 Engineering quality lens:
 - Work type: <feature | bug | refactor | data-plane | runtime | UI | planning>
 - Primary skill: <tdd | diagnose | architecture-review | code-structure | none>
@@ -60,9 +72,12 @@ independent ready or readiness-prep slice. Stop only when no safe progress remai
 
 - [ ] Done-means is observable, not a task list.
 - [ ] Evidence/verification commands are named and runnable.
+- [ ] Quiet overnight mode is explicit: no routine narration, long logs, full
+      diffs, or repeated raw probe dumps in chat.
 - [ ] In-scope and out-of-scope rows/files are explicit.
 - [ ] Base branch and PR surface are stated.
 - [ ] Quality lens block is filled (skip only for tiny/docs-only work).
 - [ ] Human-gated actions are stated.
+- [ ] Runtime reliability is configured for long/background validation if needed.
 - [ ] Blocked stop condition names the exact input needed.
 - [ ] If `IN-PROGRESS` rows are in scope, ownership is reconciled first.

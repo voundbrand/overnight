@@ -28,12 +28,34 @@ branch/head, draft PR, task queue, committed per-slice brief, and the
 `scripts/agent-signals.sh` probe output. This is transcript hygiene, not a token/turn
 budget.
 
+Use quiet overnight mode: do not stream routine agent discussion, long logs, full
+diffs, repeated probe output, or step-by-step narration into chat. Keep durable
+state in commits, the draft PR, task rows, briefs, and validation artifacts.
+Surface only compact evidence needed by the goal evaluator, blockers, and the
+final closeout.
+
+Parallel/background orchestration also needs a runtime reliability profile. Before
+spawning long-running implementation agents, check `docs/runtime-reliability.md`:
+raise or disable any background-agent no-progress watchdog, run cold builds/tests via
+a background shell/task path whose logs can be polled, and share build caches across
+worktrees (for Rust, set a local `CARGO_TARGET_DIR=/path/to/repo/.shared-cargo-target`
+and pre-warm it). If a socket/API error loses the transcript, resume from durable
+branch/PR/task state and re-run `scripts/agent-signals.sh`.
+
 Each turn, gather both feedback signals with one probe — `scripts/agent-signals.sh
-[base]` (default base `origin/main`) — which reads the CodeRabbit review and the CI
-checks and prints a `SIGNALS ci=… coderabbit=…` line plus the exit condition.
+[base]` (default base `origin/main`) — which reads code review and CI checks and
+prints a `SIGNALS ci=… coderabbit=… internal=… review=…` line plus the exit
+condition.
 Classify each finding (actionable | invalid | duplicate | blocked | out-of-scope);
 fix only the valid actionable ones plus any failing check; push a new head; repeat
-until `coderabbit=clean` and `ci=pass` and required approvals are present.
+until `review=clean` and `ci=pass` and required approvals are present.
+
+Request CodeRabbit deliberately, not on every push: add the configured
+`coderabbit-ready` label or keyword only after local/row validation passes and
+the head is ready for final integration, touches high-risk shared/security/runtime
+code, or needs an independent pass after internal-review concerns. Do not request
+it for early WIP, docs-only readiness prep, format-only fixes, or branches still
+failing local validation.
 
 There is no kanban board, dispatcher loop, polling daemon, or required status file.
 Do not build one. Select work directly from the task queue, claim a row by setting
@@ -45,7 +67,7 @@ Project configuration (fill these in):
 |---|---|
 | Base branch | `origin/main` |
 | Remote / PR surface | `GitHub gh` (draft PRs only) — or Azure DevOps `az repos` / GitLab / local-only |
-| Review tool | `CodeRabbit App + cr CLI` — or a fresh independent reviewer session |
+| Review tool | `fresh independent reviewer by default; CodeRabbit App by coderabbit-ready label; cr CLI only when deliberate` |
 | Quality lens source | `docs/quality-lenses.md` |
 | Task source of truth | `implementation_plans/<plan>/TASK_QUEUE.md` |
 

@@ -26,6 +26,20 @@ from the current branch/head, draft PR, task queue, committed per-slice brief,
 and review/check probe output. This is transcript hygiene, not a token/turn
 budget.
 
+Use quiet overnight mode: do not stream routine agent discussion, long logs, full
+diffs, repeated probe output, or step-by-step narration into chat. Keep durable
+state in commits, the draft PR, task rows, briefs, and validation artifacts.
+Surface only compact evidence needed by the goal evaluator, blockers, and the
+final closeout.
+
+Parallel/background orchestration also needs a runtime reliability profile. Before
+spawning long-running implementation agents, check `docs/runtime-reliability.md`:
+raise or disable any background-agent no-progress watchdog, run cold builds/tests via
+a background shell/task path whose logs can be polled, and share build caches across
+worktrees (for Rust, set a local `CARGO_TARGET_DIR=/path/to/repo/.shared-cargo-target`
+and pre-warm it). If a socket/API error loses the transcript, resume from durable
+branch/PR/task state and re-run `scripts/agent-signals.sh`.
+
 There is no kanban board, dispatcher loop, polling daemon, or required status
 file. Do not build one. Select work directly from the task queue / work-forward
 key, claim a row by setting `IN-PROGRESS` + `Owner` before coding, and report

@@ -47,8 +47,9 @@ Every iteration is driven by exactly two signals:
 2. **The CI checks** — GitHub Actions check results on the PR head. This is the
    *required-checks* signal.
 
-A new commit (a new head SHA) re-triggers both: CodeRabbit re-reviews on every
-push, and CI re-runs. So each turn naturally has fresh signal to act on, and the
+A new commit (a new head SHA) re-runs CI. CodeRabbit re-reviews only when the PR
+is marked ready for CodeRabbit or when you explicitly request it. Otherwise the
+review signal should come from a fresh independent reviewer command/session. The
 loop converges as the agent resolves findings and fixes failures.
 
 ## The Probe: `scripts/agent-signals.sh`
@@ -65,16 +66,19 @@ It prints a human-readable section for each signal and ends with a single
 machine-readable verdict line the loop reads:
 
 ```
-SIGNALS  ci=<state>  coderabbit=<state>
-EXIT WHEN: coderabbit=clean (no actionable findings) AND ci=pass -> stop, report ready.
+SIGNALS  ci=<state>  coderabbit=<state>  internal=<state>  review=<state>
+EXIT WHEN: review=clean (CodeRabbit or internal reviewer) AND ci=pass -> stop, report ready.
 ```
 
 - `ci` is one of `pass`, `fail`, `pending`, `no-checks`, `no-pr`. It is computed
   from `gh pr checks <pr> --json bucket` (counting `fail` and `pending`
   buckets).
 - `coderabbit` is one of `clean`, `findings:<n>`, `in-progress`, `skipped`,
-  `no-pr`, `unavailable`. When there are findings, the probe lists each
-  unresolved thread as `path:line  <first line of comment>`.
+  `not-requested`, `no-pr`, `unavailable`. When there are findings, the probe
+  lists each unresolved thread as `path:line  <first line of comment>`.
+- `internal` is the optional no-CodeRabbit reviewer command result.
+- `review` is the aggregate gate. It is `clean` when CodeRabbit is clean or the
+  configured internal reviewer is clean.
 
 The probe does **not** classify findings or fix anything — that is the agent's
 job (see below). It only reports state.
@@ -85,15 +89,17 @@ How the review signal is gathered is configurable via environment variables:
 
 | Variable | Values | Effect |
 |---|---|---|
-| `SIGNALS_REVIEW_SOURCE` | `auto` (default) | If a PR is open, read the CodeRabbit **App**'s review threads via `gh` (credit-free line-by-line on Pro); if there's no PR yet, run the local `coderabbit review --agent` CLI. |
+| `SIGNALS_REVIEW_SOURCE` | `auto` (default) | If a PR is open and has the ready marker, read the CodeRabbit **App**'s review threads via `gh`; otherwise rely on internal review + CI. |
 | `SIGNALS_REVIEW_SOURCE` | `app` | Always read the App's PR review threads via `gh` (credit-free; line-by-line on Pro, summary-only on Free). |
 | `SIGNALS_REVIEW_SOURCE` | `cli` | Always run `coderabbit review --agent` locally (spends a CLI credit/turn). |
 | `SIGNALS_SKIP_REVIEW` | `1` | Skip the review signal entirely (CI only). |
+| `SIGNALS_INTERNAL_REVIEW_COMMAND` | command | Run this command as the fresh-reviewer fallback; exit 0 means clean. |
+| `SIGNALS_CODERABBIT_LABEL` | `coderabbit-ready` | In `auto` mode, request CodeRabbit only when this PR label is present. |
+| `SIGNALS_CODERABBIT_KEYWORD` | `coderabbit:review` | In `auto` mode, request CodeRabbit when this PR title/body keyword is present. |
 
-The default (`auto`) is deliberately frugal: once a draft PR exists, the
-GitHub App provides full line-by-line review for free, so the probe reads those
-threads through `gh` instead of spending a CLI credit each turn. Before a PR
-exists, it falls back to the local CLI so the agent can still get review signal.
+The default (`auto`) is deliberately frugal: active draft PRs do not request
+CodeRabbit until they are marked ready. Before a PR exists, it skips CodeRabbit
+unless `SIGNALS_PRE_PR_CLI=1` is set.
 
 ## The PR Comment Loop, Step by Step
 
@@ -113,9 +119,9 @@ is the engine.
    Implement with the smallest quality lens that changes the decision (see
    "Quality Lenses" below). Don't bulk-load rule sets.
 2. **Probe the review state.** Run `scripts/agent-signals.sh <base>` to pull
-   every unresolved signal for the current head: CodeRabbit findings **and** CI
-   check results. Also read any human PR comments / review threads / required
-   reviewer votes.
+   every unresolved signal for the current head: CodeRabbit findings when
+   requested, internal-review output when configured, **and** CI check results.
+   Also read any human PR comments / review threads / required reviewer votes.
 3. **Classify each finding.** Every finding is labeled exactly one of:
    `actionable` (fix it), `invalid` (explain, no change), `duplicate` (fix once),
    `blocked` (stop with the exact input needed), or `out-of-scope` (record a
@@ -123,8 +129,8 @@ is the engine.
 4. **Fix only valid actionable findings.** Make the focused change, validate the
    changed area, commit. No drive-by refactors. If a head's feedback is entirely
    invalid/duplicate/out-of-scope, make no noise commit and record why.
-5. **Push the new head.** A new SHA invalidates the prior review and re-triggers
-   both signals — CodeRabbit re-reviews, CI re-runs.
+5. **Push the new head.** A new SHA invalidates the prior review and re-runs CI.
+   CodeRabbit re-runs only when the PR is marked for CodeRabbit review.
 6. **Repeat 2–5 until the exit condition holds:** no unresolved actionable
    findings, required checks pass, and the PR has the approvals its policy
    requires. Keep it bounded — two passes usually clear a head; continue only for
@@ -230,6 +236,12 @@ anything that affects shared/protected state, costs money, or reaches the outsid
 world is human-gated. Merging to `main` is the canonical example and is **never**
 done by the agent.
 
+This is not the same as filesystem containment. Git branches and worktrees isolate
+repository state and make changes reviewable, but they are not an OS/container
+sandbox. A local agent still has the filesystem access granted by its harness and
+host user. Use a container, platform sandbox, or harness-level permission controls
+when the requirement is "only the project directory is mounted/readable."
+
 ## Session Hygiene and Rollover
 
 A single ever-growing chat transcript is **not** the durable state of an
@@ -262,6 +274,20 @@ runtime cannot spawn a new session automatically, the agent still keeps output
 compact, writes bulky diagnostics to files instead of chat, and pauses after a
 green slice with a precise restart prompt for the next fresh session.
 
+### Quiet overnight mode
+
+For Conductor and other UI-backed runtimes, overnight sessions should be quiet by
+default. Do not stream routine agent discussion, step-by-step narration, full
+diffs, long logs, or repeated raw probe output into chat. The durable log is the
+branch, commits, draft PR, task queue row, committed brief, and validation
+artifacts.
+
+The agent should surface only compact evidence needed by the goal evaluator:
+current head/PR when it changes, the `SIGNALS ...` verdict line or a short
+validation summary, blockers, and the final closeout. If a provider needs proof
+inside the transcript, emit the smallest stable summary that proves the state and
+put bulky details in files or PR comments.
+
 ## The Autonomy Engine: A Persistence Loop
 
 What makes a thread keep working unattended is a **persistence loop**: an
@@ -288,7 +314,7 @@ this shape so the agent never has to guess what done means:
 | Field | Meaning for an implementation thread |
 |---|---|
 | **Outcome** | The current piece is approved + green; then the thread advances through the next launch-ready pieces, or creates the missing readiness brief for the next candidate and proceeds when ready. |
-| **Verification surface** | Review clean (CodeRabbit/reviewer), required checks pass, required approvals present — demonstrated by the `agent-signals.sh` output in-conversation. |
+| **Verification surface** | Review clean (CodeRabbit/reviewer), required checks pass, required approvals present — demonstrated by a compact `agent-signals.sh` verdict in-conversation. |
 | **Constraints** | What must not regress: contracts, security posture, tests. |
 | **Boundaries** | Owned files, base branch, allowed tools/providers; never merge or push to `main`/protected base. |
 | **Iteration policy** | Each turn: address the latest unresolved findings / failing checks, push, re-probe; after green/clean, integrate only to an allowed non-main branch (or leave a main-targeted PR ready), then claim the next launch-ready row or author the missing readiness brief. |
@@ -298,8 +324,8 @@ this shape so the agent never has to guess what done means:
 > transcript** — it does not run commands or read files. Phrase the condition as
 > something the agent demonstrates in-conversation: it must run
 > `agent-signals.sh` (or `gh pr view --json statusCheckRollup,reviewDecision,reviews`)
-> and surface the output each turn. The condition limit is 4,000 chars; one goal
-> per session; pair with auto mode so tool calls run unattended.
+> and surface a compact verdict each turn. The condition limit is 4,000 chars; one
+> goal per session; pair with auto mode so tool calls run unattended.
 
 ## Readiness-Prep Mode
 

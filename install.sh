@@ -8,9 +8,10 @@
 #
 # What it copies:
 #   .claude/skills/*            the portable skills (engine + quality lenses)
-#   scripts/agent-signals.sh    the per-turn CodeRabbit + CI signals probe
+#   scripts/agent-signals.sh    the per-turn review + CI signals probe
 #   docs/*                      how-it-works / quickstart / configuration / autonomy-engine / faq
 #                               + quality-lenses / code-review-guidelines / parallel-repo-write-protocol
+#   agents/*                    AGENTS.md / CLAUDE.md snippets to paste into the target repo
 #   .coderabbit.example.yaml -> .coderabbit.yaml   (only if the target has none)
 #   .github/workflows/ci.example.yml, .github/pull_request_template.md
 #
@@ -77,6 +78,9 @@ chmod +x "$TARGET/scripts/agent-signals.sh" 2>/dev/null || true
 echo "• docs (docs/)"
 copy_tree "$SELF_DIR/docs" "$TARGET/docs"
 
+echo "• agent instructions (agents/)"
+copy_tree "$SELF_DIR/agents" "$TARGET/agents"
+
 echo "• reviewer config"
 if [ -e "$TARGET/.coderabbit.yaml" ] && [ "$FORCE" -ne 1 ]; then
   copy_file "$SELF_DIR/.coderabbit.example.yaml" "$TARGET/.coderabbit.example.yaml"
@@ -95,8 +99,8 @@ echo
 echo "Next steps:"
 echo "  1. Paste agents/AGENTS.snippet.md into $TARGET/AGENTS.md (or CLAUDE.md) and fill the knobs."
 echo "     A filled-in example is in agents/AGENTS.example.md."
-echo "  2. Wire a reviewer: install the CodeRabbit GitHub App or the 'cr' CLI"
-echo "     (optional — a fresh independent reviewer session is the fallback)."
+echo "  2. Wire a reviewer: use a fresh independent reviewer by default; add"
+echo "     CodeRabbit only for deliberate ready heads (App label/keyword or 'cr' CLI)."
 echo "  3. Create implementation_plans/<plan>/TASK_QUEUE.md"
 echo "     (copy examples/implementation_plans/example_plan/ or use the prd-to-task-queue skill)."
 echo "  4. Read docs/quickstart.md and start your first slice."

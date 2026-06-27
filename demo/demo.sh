@@ -51,7 +51,7 @@ say "  ${ORG}-${R} ${CYN}src/auth.ts${R}${D}:131${R}  add a test for the ${TEAL}
 say "${B}${TEAL}## 2. GitHub Actions checks${R} ${D}(required-checks signal)${R}"
 say "  ${BGRN}✓${R} ${WHT}build${R}      ${BRED}✗ test${R}  ${D}(1 failing)${R}"
 rule
-say "SIGNALS  ci=${BRED}fail${R}  coderabbit=${GLD}findings:2${R}"
+say "SIGNALS  ci=${BRED}fail${R}  coderabbit=${GLD}findings:2${R}  internal=${D}not-run${R}  review=${GLD}findings:2${R}"
 echo; slp 1.9
 
 note "3. classify findings, fix only the VALID actionable ones, push a new head"
@@ -71,8 +71,8 @@ say "${BGRN}No unresolved CodeRabbit review threads on PR #42 — clean.${R}"
 say "${B}${TEAL}## 2. GitHub Actions checks${R}"
 say "  ${BGRN}✓${R} ${WHT}build${R}      ${BGRN}✓ test${R}"
 rule
-say "SIGNALS  ci=${BGRN}pass${R}  coderabbit=${BGRN}clean${R}"
-say "${D}EXIT WHEN: coderabbit=clean AND ci=pass → stop, report ready.${R}"
+say "SIGNALS  ci=${BGRN}pass${R}  coderabbit=${BGRN}clean${R}  internal=${D}not-run${R}  review=${BGRN}clean${R}"
+say "${D}EXIT WHEN: review=clean AND ci=pass → stop, report ready.${R}"
 echo; slp 1.9
 
 say "${B}${BGRN}  ✓ reviewer clean · checks green · PR left READY for a human${R}"

@@ -17,6 +17,19 @@ build.
 - The draft PR plus `scripts/agent-signals.sh origin/main` is the review loop:
   CodeRabbit review threads and GitHub checks are the source of truth.
 
+## Long-Running Builds In Worktrees
+
+- Worktree isolation does not require isolated build artifacts. For heavy Rust
+  workspaces, set a shared `CARGO_TARGET_DIR` outside the individual worktrees and
+  pre-warm it before launching parallel slices.
+- Do not let a nested background implementation agent's first visible action be one
+  cold, long build if your harness has a no-progress watchdog. Run that build from
+  the supervising session's background shell/task facility, or split validation so
+  the agent emits progress below the watchdog threshold.
+- If a provider/socket error loses the final report, resume from durable state:
+  branch, draft PR, task row, committed per-slice brief, and
+  `scripts/agent-signals.sh origin/main`. See `docs/runtime-reliability.md`.
+
 ## File Ownership
 
 - A row's `Writes:` entry is the ownership set for the slice. Edits outside that

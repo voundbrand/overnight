@@ -49,16 +49,24 @@ cp .coderabbit.example.yaml .coderabbit.yaml
 
 ## 2. Wire a reviewer
 
-The loop needs a review signal. Pick **one** (CodeRabbit App is the recommended
-default):
+The loop needs a review signal. Pick **one** default, and use CodeRabbit
+deliberately when a PR head is stable enough for it:
 
-**Option A — CodeRabbit GitHub App (recommended).** Install it on the repo from
-the [CodeRabbit dashboard](https://app.coderabbit.ai). On the Pro plan it posts
-**credit-free, line-by-line** review threads that the probe reads directly via `gh`
-— no local credits spent.
+**Option A — fresh-reviewer fallback (recommended for active worker branches).**
+Have a separate, independent agent session review each head and expose it through
+a command:
 
-**Option B — CodeRabbit `cr` CLI.** Use when there is no PR yet, or you prefer
-local review.
+```bash
+export SIGNALS_INTERNAL_REVIEW_COMMAND='scripts/internal-review.sh'
+```
+
+**Option B — CodeRabbit GitHub App.** Install it on the repo from the
+[CodeRabbit dashboard](https://app.coderabbit.ai), but keep `.coderabbit.yaml`
+opt-in. Add the `coderabbit-ready` label or `coderabbit:review` keyword when the
+PR should spend a CodeRabbit review.
+
+**Option C — CodeRabbit `cr` CLI.** Use only when you intentionally want local
+CodeRabbit review and accept the allowance/cost.
 
 ```bash
 curl -fsSL https://cli.coderabbit.ai/install.sh | sh
@@ -66,16 +74,15 @@ coderabbit auth login
 coderabbit review --agent --base main    # smoke test
 ```
 
-**Option C — fresh-reviewer fallback (no CodeRabbit).** Skip the review signal in
-the probe and have a separate, independent agent session review each head:
+To skip all review and check only CI for a turn:
 
 ```bash
-export SIGNALS_SKIP_REVIEW=1             # probe reports CI only
+export SIGNALS_SKIP_REVIEW=1
 ```
 
 The probe auto-selects the source. Override with
-`SIGNALS_REVIEW_SOURCE=auto|app|cli` (default `auto`: read the App's PR threads
-once a PR exists, else run the CLI).
+`SIGNALS_REVIEW_SOURCE=auto|app|cli` (default `auto`: read the App only when the
+PR has the ready marker; otherwise rely on the internal reviewer + CI).
 
 ---
 
@@ -101,7 +108,7 @@ Unattended implementation work follows `.claude/skills/overnight-agent-runbook/S
 |---|---|
 | Base branch | `origin/main` (any non-main base also works) |
 | Remote / PR surface | GitHub `gh` (draft PRs only) |
-| Review tool | CodeRabbit App (Pro, credit-free) + `cr` CLI before first PR |
+| Review tool | Fresh independent reviewer by default; CodeRabbit by `coderabbit-ready` label |
 | Quality lens source | `docs/quality-lenses.md` |
 | Task source of truth | `implementation_plans/checkout-v2/TASK_QUEUE.md` |
 ```
@@ -162,8 +169,8 @@ gh pr create --draft --base main --fill
 
 ## 6. Run the loop signals
 
-One probe gathers **both** feedback signals — the CodeRabbit review and the GitHub
-Actions checks — and prints the exit condition:
+One probe gathers **both** feedback signals — code review and the GitHub Actions
+checks — and prints the exit condition:
 
 ```bash
 scripts/agent-signals.sh            # base defaults to origin/main
@@ -172,14 +179,14 @@ scripts/agent-signals.sh            # base defaults to origin/main
 Read the verdict line:
 
 ```text
-SIGNALS  ci=pass  coderabbit=clean
-EXIT WHEN: coderabbit=clean (no actionable findings) AND ci=pass -> stop, report ready.
+SIGNALS  ci=pass  coderabbit=not-requested  internal=clean  review=clean
+EXIT WHEN: review=clean (CodeRabbit or internal reviewer) AND ci=pass -> stop, report ready.
 ```
 
 The agent's loop is: run the probe → for each finding, classify it
 (**actionable / invalid / duplicate / blocked / out-of-scope**) → fix only valid
 actionable ones → push a new head (which re-triggers review + CI) → re-probe.
-Repeat until `coderabbit=clean AND ci=pass` and required approvals exist. Then it
+Repeat until `review=clean AND ci=pass` and required approvals exist. Then it
 records a compact closeout and stops. **It never merges to `main`.**
 
 Useful knobs:
@@ -187,6 +194,7 @@ Useful knobs:
 ```bash
 SIGNALS_SKIP_REVIEW=1 scripts/agent-signals.sh         # CI only
 SIGNALS_REVIEW_SOURCE=cli scripts/agent-signals.sh     # force local CLI review
+SIGNALS_CODERABBIT_LABEL=coderabbit-ready scripts/agent-signals.sh
 scripts/agent-signals.sh origin/release                # different base
 ```
 
@@ -197,12 +205,18 @@ scripts/agent-signals.sh origin/release                # different base
 Hand the agent a persistence loop so it re-probes and continues without you. Use a
 native Goal feature if your harness has one; otherwise schedule a re-prompt.
 
+Before spawning parallel/background implementation agents, apply the runtime
+reliability profile in `docs/runtime-reliability.md`: raise any background-agent
+no-progress watchdog, run cold builds through a background shell path whose logs
+can be polled, and share build caches across worktrees (for Rust, set
+`CARGO_TARGET_DIR=/path/to/repo/.shared-cargo-target` and pre-warm it).
+
 **Claude Code** (`/goal` needs >= 2.1.139; otherwise use the `/loop` skill):
 
 ```text
 /goal Drive every launch-ready row in implementation_plans/checkout-v2/TASK_QUEUE.md
 to a clean, green draft PR.
-verified by scripts/agent-signals.sh reporting coderabbit=clean AND ci=pass per slice.
+verified by scripts/agent-signals.sh reporting review=clean AND ci=pass per slice.
 Base: origin/main. Remote/PR: GitHub gh, draft PRs only.
 Do not set a token/turn budget. Merge to main stays human-gated. Stop only when no
 row can be implemented or made launch-ready, or a human gate is hit.
@@ -229,6 +243,9 @@ assumption — or a real human gate is hit.
   transcript.
 - Between slices in a UI-backed runtime (e.g. Conductor — one example), start fresh:
   the next session re-orients from branch/PR/queue/brief/probe output.
+- Quiet overnight mode: no routine progress narration, long logs, full diffs, or
+  repeated raw probe output in chat; only compact evaluator evidence, blockers,
+  and closeouts.
 
 ## Next
 

@@ -3,12 +3,12 @@
 # CodeRabbit config TEMPLATE for Overnight.
 # Rename this file to `.coderabbit.yaml` after customizing it for your repo.
 #
-# CodeRabbit is the recursive PR reviewer that drives the overnight agent loop
-# (.claude/skills/overnight-agent-runbook). It re-reviews on every push, so its
-# comments ARE the loop's feedback. The free GitHub App gives credit-free,
-# line-by-line review on Pro; the `cr` CLI runs the same review locally. If you
-# don't use CodeRabbit, the loop falls back to a fresh independent reviewer
-# session — the mechanics are identical, only the reviewer changes.
+# CodeRabbit is an optional high-signal reviewer for the overnight agent loop.
+# Active worker PRs should normally run on CI + local/fresh-agent review until
+# they are stable enough to spend a CodeRabbit review. Add the `coderabbit-ready`
+# label (or comment @coderabbitai review manually) when a PR should be reviewed.
+# If you do not use CodeRabbit, keep the loop on the fresh independent reviewer
+# fallback — the mechanics are identical, only the reviewer changes.
 #
 # Repo rules live in AGENTS.md (+ your DECISION_LOG if you keep one).
 language: en-US
@@ -20,8 +20,10 @@ reviews:
   poem: false
   collapse_walkthrough: false
   auto_review:
-    enabled: true
-    drafts: true # the runbook opens DRAFT PRs early — review them so the loop has feedback
+    enabled: false
+    drafts: true
+    labels:
+      - coderabbit-ready
     base_branches:
       # Default base is `main`. Any non-main base also works — list it here.
       - main

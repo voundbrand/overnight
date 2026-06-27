@@ -22,9 +22,13 @@ lives in three durable places:
    if you use the CodeRabbit GitHub App.
 3. **Environment variables** passed to `scripts/agent-signals.sh` — runtime
    overrides for how the per-turn probe gathers review signals.
+4. **Harness-local runtime settings** — watchdogs, shell timeouts, and build-cache
+   paths used by your agent runner. These are intentionally local; see
+   [Runtime Reliability](runtime-reliability.md).
 
-The PR, its checks, and the task row are the durable *state*. These three places
-are the durable *configuration*.
+The PR, its checks, and the task row are the durable *state*. The first three
+places above are durable repo configuration. Harness-local runtime settings make
+long-running sessions reliable on one machine or runner.
 
 ---
 
@@ -100,30 +104,27 @@ completes a PR into `main`/a protected base. Record your choice in the knobs tab
 The reviewer whose comments drive the loop. The review mechanics are agnostic
 (see `.claude/skills/pr-review-loop/SKILL.md`); only the reviewer changes.
 
-- **Default — CodeRabbit**, in two complementary forms:
-  - **The CodeRabbit GitHub App** — credit-free, line-by-line review on the Pro
-    plan. It re-reviews automatically on every push, so its PR comments *are* the
-    loop's feedback. Configure it via `.coderabbit.yaml`.
-  - **The `coderabbit` CLI (`cr`)** — runs the same review locally, useful before
-    a PR exists (`cr --agent --base <base>`).
-- **Fallback — a fresh independent reviewer session.** If you don't use CodeRabbit,
-  spawn a separate agent session prompted only to review the exact head SHA and
-  return findings; the implementation session owns the fixes. The mechanics are
-  identical — classify each finding, fix the valid actionable ones, re-review the
-  new head.
+- **Default — tiered review.** Run CI, the row's Verify command, and a fresh
+  independent reviewer while a branch is still moving quickly. This keeps
+  paid/rate-limited reviewers focused on stable heads.
+- **CodeRabbit GitHub App.** Configure `.coderabbit.yaml` as opt-in with a label
+  such as `coderabbit-ready`. Add the label or a keyword such as
+  `coderabbit:review` when the PR is ready for that review pass.
+- **CodeRabbit CLI (`cr`).** Runs the same review locally
+  (`cr --agent --base <base>`) and can spend allowance; reserve it for deliberate
+  pre-PR or no-PR review.
+- **Fresh independent reviewer session.** Spawn a separate agent prompted only to
+  review the exact head SHA and return findings. The implementation session owns
+  the fixes. The mechanics are identical — classify each finding, fix the valid
+  actionable ones, re-review the new head.
 
 The probe chooses *how* to read the review automatically; you can override it with
 [`SIGNALS_REVIEW_SOURCE`](#signals_review_source). Record your reviewer in the
 knobs table:
 
 ```text
-| Review tool | CodeRabbit App + cr CLI (fallback: fresh independent reviewer) |
+| Review tool | CI + fresh independent reviewer by default; CodeRabbit App by `coderabbit-ready` label |
 ```
-
-> **Note on plans.** On the CodeRabbit Pro plan the App gives credit-free
-> line-by-line review threads (what the probe reads in `app`/`auto` mode). On the
-> Free plan the App is summary-only — use `SIGNALS_REVIEW_SOURCE=cli` there so the
-> local `cr` run produces actionable findings.
 
 ### Quality lens source
 
@@ -197,12 +198,12 @@ This policy is enforced by prose, not config — it lives in `AGENTS.md` (from
 ## `agent-signals.sh` environment variables
 
 `scripts/agent-signals.sh [base-branch]` is the one per-turn probe. It gathers
-**both** feedback signals — the CodeRabbit review and the GitHub Actions checks —
+**both** feedback signals — code review and the GitHub Actions checks —
 and prints a single verdict line plus the exit condition:
 
 ```text
-SIGNALS  ci=<pass|fail|pending|no-checks|no-pr|none>  coderabbit=<clean|findings:N|in-progress|skipped|…>
-EXIT WHEN: coderabbit=clean (no actionable findings) AND ci=pass -> stop, report ready.
+SIGNALS  ci=<pass|fail|pending|no-checks|no-pr|none>  coderabbit=<...>  internal=<...>  review=<clean|findings|pending|missing|...>
+EXIT WHEN: review=clean (CodeRabbit or internal reviewer) AND ci=pass -> stop, report ready.
 ```
 
 The base branch is the first positional argument and defaults to `origin/main`:
@@ -223,7 +224,7 @@ Selects where the CodeRabbit review signal comes from. Default: `auto`.
 
 | Value | Behavior |
 |---|---|
-| `auto` *(default)* | **PR open:** read the CodeRabbit App's unresolved review threads via `gh` (credit-free, line-by-line on Pro). **No PR yet:** run a local `coderabbit review --agent --base <base>` (CLI). The pragmatic default — uses the App when a PR exists, the CLI before that. |
+| `auto` *(default)* | **PR open + ready marker present:** read the CodeRabbit App's unresolved review threads via `gh`. **PR open without marker:** skip CodeRabbit and rely on internal review + CI. **No PR:** skip CodeRabbit unless `SIGNALS_PRE_PR_CLI=1`. |
 | `app` | **Always** read the App's PR review threads via `gh`. Credit-free and line-by-line on Pro; on the Free plan this is summary-only (0 threads). Requires an open PR — reports `no-pr` otherwise. |
 | `cli` | **Always** run `coderabbit review --agent --base <base>` locally. Spends a CLI credit/turn. Use this on the Free plan or with no hosted PR. Reports `unavailable` if the `cr` CLI isn't installed. |
 
@@ -246,8 +247,57 @@ in a local-only flow with no reviewer.
 SIGNALS_SKIP_REVIEW=1 ./scripts/agent-signals.sh
 ```
 
-The verdict line then reports `coderabbit=skipped`, and the exit condition still
-requires `ci=pass` before reporting ready.
+The verdict line then reports `coderabbit=skipped`; configure
+`SIGNALS_INTERNAL_REVIEW_COMMAND` if you still want the aggregate `review=clean`
+gate to be satisfied.
+
+### CodeRabbit readiness and internal review
+
+| Variable | Default | Behavior |
+|---|---|---|
+| `SIGNALS_CODERABBIT_LABEL` | `coderabbit-ready` | In `auto` mode, request CodeRabbit only when the PR has this label. Set empty to disable label gating. |
+| `SIGNALS_CODERABBIT_KEYWORD` | `coderabbit:review` | In `auto` mode, request CodeRabbit when the PR title/body contains this string. |
+| `SIGNALS_PRE_PR_CLI` | `0` | Set to `1` to run the CodeRabbit CLI before a PR exists. |
+| `SIGNALS_INTERNAL_REVIEW_COMMAND` | empty | Command used as the no-CodeRabbit reviewer. Exit `0` means `internal=clean`; non-zero means findings. |
+| `SIGNALS_IGNORE_CHECKS_REGEX` | empty | Extra GitHub check names to ignore when computing `ci`. The probe automatically ignores the `CodeRabbit` check when CodeRabbit was not requested. |
+
+```bash
+SIGNALS_INTERNAL_REVIEW_COMMAND='scripts/internal-review.sh' ./scripts/agent-signals.sh
+SIGNALS_CODERABBIT_LABEL=coderabbit-ready ./scripts/agent-signals.sh origin/main
+```
+
+Agents may request CodeRabbit themselves, but should follow a spending policy:
+request it when local/row validation passes and either the PR is ready for final
+integration, the slice touches high-risk surfaces such as shared contracts,
+security, auth, runtime, persistence, or concurrency, or an internal reviewer
+raised concerns that need an independent pass. Do not request CodeRabbit for
+early WIP pushes, docs-only readiness prep, format-only fixes, or branches still
+failing local validation.
+
+---
+
+## Harness Runtime Variables
+
+These are not read by `agent-signals.sh`; they are consumed by your agent harness,
+shell, compiler, or CI runner. Configure them wherever your runtime loads local
+environment variables.
+
+Use [Runtime Reliability](runtime-reliability.md) before parallel/background
+orchestration, especially when implementation agents run in git worktrees and the
+first build is cold. The common pattern is:
+
+```bash
+export CARGO_TARGET_DIR=/path/to/repo/.shared-cargo-target
+export BASH_MAX_TIMEOUT_MS=3600000
+export CLAUDE_ASYNC_AGENT_STALL_TIMEOUT_MS=3600000
+```
+
+The exact watchdog variable names are harness-specific. For Claude Code /
+Conductor-style runs, `CLAUDE_ASYNC_AGENT_STALL_TIMEOUT_MS` controls the
+background subagent no-progress watchdog. Other harnesses may expose a different
+setting or none at all. If no setting exists, avoid cold builds inside nested
+background implementation agents and run those builds from the supervising
+session's background shell instead.
 
 ---
 
@@ -279,11 +329,12 @@ Two paths, depending on version:
 
   **Important — the evaluator only judges the transcript; it does not run commands
   or read files.** Phrase the condition as something the agent *demonstrates
-  in-conversation* — it must run the check and surface the output each turn. For
-  example: "PR `<url>` has all required checks green, no unresolved review
-  comments, and required approvals — shown by running `gh pr view --json
-  statusCheckRollup,reviewDecision,reviews` and the reviewer output in this
-  conversation." Condition limit: 4,000 chars.
+  in-conversation* — it must run the check and surface compact evidence each turn.
+  For example: "PR `<url>` has all required checks green, no unresolved review
+  comments, and required approvals — shown by running `scripts/agent-signals.sh
+  <base>` or `gh pr view --json statusCheckRollup,reviewDecision,reviews` and
+  summarizing the reviewer/check verdict in this conversation." Condition limit:
+  4,000 chars.
 
 - **`/loop` skill or a Stop hook (older Claude Code)** — if `/goal` isn't
   available, re-send the same six-field contract on an interval until the exit
@@ -328,7 +379,7 @@ A standard GitHub repo on `main` with CodeRabbit Pro and Claude Code ≥ v2.1.13
 # AGENTS.md knobs (filled once)
 #   Base branch          : origin/main
 #   Remote / PR surface  : GitHub gh, draft PRs only
-#   Review tool          : CodeRabbit App + cr CLI
+#   Review tool          : fresh independent reviewer; CodeRabbit by ready label
 #   Quality lens source  : docs/quality-lenses.md + .claude/skills/
 #   Task source of truth : implementation_plans/<your-plan>/TASK_QUEUE.md
 #   Escalation           : record blocker + exact input, move to next independent slice

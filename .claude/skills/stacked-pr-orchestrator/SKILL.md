@@ -61,6 +61,29 @@ instead of reusing the same transcript indefinitely. The durable state is the
 branch, draft PR, task queue, committed brief, and review/check output; the chat
 history is not the state store.
 
+## Runtime reliability profile for parallel runs
+
+Before spawning parallel/background implementation sessions, apply the target
+repo's `docs/runtime-reliability.md` guidance if present. If it is absent, use
+this minimum profile:
+
+1. Check whether the harness has a background-agent no-progress watchdog. Raise or
+   disable it for long background implementation sessions, or avoid nested
+   background agents for cold builds.
+2. Run cold builds/tests through a background shell/task path whose logs can be
+   polled by the supervising session. Do not let a nested background agent's first
+   visible action be one long compile that emits no agent-visible progress.
+3. Share build caches across worktrees. For Rust, set a local
+   `CARGO_TARGET_DIR=/path/to/repo/.shared-cargo-target` and pre-warm it before
+   launching multiple slices.
+4. Resume after socket/API failures from durable state: branch, draft PR, task
+   row, committed per-slice brief, and `scripts/agent-signals.sh <base>`.
+
+For Claude Code / Conductor-style runs, the relevant local knobs commonly include
+`CLAUDE_ASYNC_AGENT_STALL_TIMEOUT_MS`, `BASH_MAX_TIMEOUT_MS`,
+`CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS`, `CLAUDE_CODE_RETRY_WATCHDOG`, and
+`CARGO_TARGET_DIR`. These are harness-local settings, not committed repo knobs.
+
 ## Phase 1 — Decompose into a PR stack
 
 Use `template/prompts/decompose.md`. Produce:
