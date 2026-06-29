@@ -18,12 +18,15 @@
 #   app  — always read the App's PR review threads via gh (credit-free; line-by-line
 #          on Pro; on the Free plan this is summary-only / 0 threads).
 #   cli  — always run `coderabbit review --agent` (local; spends a CLI credit/turn).
+#          CLI output is not durable PR state. Set SIGNALS_CLI_REVIEW_LOG to
+#          save the transcript before using CLI review as overnight evidence.
 #   SIGNALS_SKIP_REVIEW=1 — skip the review signal entirely (CI only).
 #
 # Cost controls:
 #   SIGNALS_CODERABBIT_LABEL=coderabbit-ready  # default; empty disables label gating
 #   SIGNALS_CODERABBIT_KEYWORD=coderabbit:review
 #   SIGNALS_PRE_PR_CLI=1                       # opt into pre-PR CLI spend
+#   SIGNALS_CLI_REVIEW_LOG=.context/coderabbit-cli-review.log
 #   SIGNALS_INTERNAL_REVIEW_COMMAND='<cmd>'    # exit 0 = clean, non-zero = findings
 #   SIGNALS_IGNORE_CHECKS_REGEX='^CodeRabbit$' # extra ignored check names
 #
@@ -42,6 +45,7 @@ CODE_REVIEW_LABEL="${SIGNALS_CODERABBIT_LABEL:-coderabbit-ready}"
 CODE_REVIEW_KEYWORD="${SIGNALS_CODERABBIT_KEYWORD:-coderabbit:review}"
 PRE_PR_CLI="${SIGNALS_PRE_PR_CLI:-0}"
 INTERNAL_REVIEW_COMMAND="${SIGNALS_INTERNAL_REVIEW_COMMAND:-}"
+CLI_REVIEW_LOG="${SIGNALS_CLI_REVIEW_LOG:-}"
 IGNORE_CHECKS_REGEX="${SIGNALS_IGNORE_CHECKS_REGEX:-}"
 AUTO_IGNORE_CHECKS_REGEX=""
 
@@ -88,7 +92,7 @@ _stderr_is_no_checks() {
 }
 
 run_cli_review() {
-  local outf errf rc
+  local outf errf rc findings head
   outf="$(_tmpfile || true)"
   errf="$(_tmpfile || true)"
   if [ -z "$outf" ] || [ -z "$errf" ]; then
@@ -101,6 +105,28 @@ run_cli_review() {
   coderabbit review --agent --base "$BASE" >"$outf" 2>"$errf"
   rc=$?
   [ -s "$outf" ] && cat "$outf"
+  if [ -n "$CLI_REVIEW_LOG" ]; then
+    head="$(git rev-parse --short HEAD 2>/dev/null || echo '?')"
+    mkdir -p "$(dirname "$CLI_REVIEW_LOG")" 2>/dev/null || true
+    {
+      echo "# CodeRabbit CLI review"
+      echo "branch=$branch"
+      echo "base=$BASE"
+      echo "head=$head"
+      echo "captured_at=$(date -u '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date)"
+      echo
+      cat "$outf"
+      if [ -s "$errf" ]; then
+        echo
+        echo "## stderr"
+        cat "$errf"
+      fi
+    } >"$CLI_REVIEW_LOG" 2>/dev/null \
+      && echo "(CodeRabbit CLI output saved to $CLI_REVIEW_LOG)" \
+      || echo "WARNING: could not write SIGNALS_CLI_REVIEW_LOG=$CLI_REVIEW_LOG"
+  else
+    echo "NOTE: CodeRabbit CLI output is transcript-only; set SIGNALS_CLI_REVIEW_LOG=.context/coderabbit-cli-review.log before relying on it as durable overnight evidence."
+  fi
   if [ "$rc" -ne 0 ]; then
     echo "ERROR: CodeRabbit CLI FAILED (exit $rc) — review did NOT run; NOT clean. Re-probe."
     _print_file_head "$errf"
@@ -113,7 +139,15 @@ run_cli_review() {
     echo "ERROR: CodeRabbit CLI produced no output despite exit 0 — review result is not trustworthy; NOT clean. Re-probe."
     cr_verdict="error (empty)"
   else
-    cr_verdict="ran (classify findings above)"
+    findings="$(grep -Eo 'findings=[0-9]+' "$outf" | tail -1 | cut -d= -f2 || true)"
+    if [ "${findings:-}" = "0" ]; then
+      cr_verdict="clean"
+    elif printf '%s\n' "${findings:-}" | grep -qE '^[1-9][0-9]*$'; then
+      cr_verdict="findings:$findings"
+    else
+      echo "WARNING: CodeRabbit CLI ran, but no findings=N summary was parsed; classify the saved/printed findings and do not treat this as clean."
+      cr_verdict="ran (classify findings above)"
+    fi
   fi
   _cleanup_file "$outf"
   _cleanup_file "$errf"
@@ -376,7 +410,8 @@ fi
 echo
 echo "============================================================"
 echo "SIGNALS  ci=$ci  coderabbit=$cr_verdict  internal=$internal_verdict  review=$review_verdict"
-echo "EXIT WHEN: review=clean (CodeRabbit or internal reviewer) AND ci=pass -> stop, report ready."
+echo "SLICE READY WHEN: review=clean (CodeRabbit or internal reviewer) AND ci=pass -> current head is ready."
+echo "CAMPAIGN CONTINUATION: the goal/task queue decides whether to claim the next row, readiness-prep, or stop."
 echo "  review=missing -> configure SIGNALS_INTERNAL_REVIEW_COMMAND or request CodeRabbit with the label/keyword."
 echo "  coderabbit=error -> a requested CodeRabbit review did NOT run (network/rate-limit/auth); re-probe — NEVER treat as clean."
 echo "  coderabbit=in-progress / ci=pending -> wait, re-probe."

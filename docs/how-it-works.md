@@ -67,7 +67,8 @@ machine-readable verdict line the loop reads:
 
 ```
 SIGNALS  ci=<state>  coderabbit=<state>  internal=<state>  review=<state>
-EXIT WHEN: review=clean (CodeRabbit or internal reviewer) AND ci=pass -> stop, report ready.
+SLICE READY WHEN: review=clean (CodeRabbit or internal reviewer) AND ci=pass -> current head is ready.
+CAMPAIGN CONTINUATION: the goal/task queue decides whether to claim the next row, readiness-prep, or stop.
 ```
 
 - `ci` is one of `pass`, `fail`, `pending`, `no-checks`, `no-pr`. It is computed
@@ -96,10 +97,17 @@ How the review signal is gathered is configurable via environment variables:
 | `SIGNALS_INTERNAL_REVIEW_COMMAND` | command | Run this command as the fresh-reviewer fallback; exit 0 means clean. |
 | `SIGNALS_CODERABBIT_LABEL` | `coderabbit-ready` | In `auto` mode, request CodeRabbit only when this PR label is present. |
 | `SIGNALS_CODERABBIT_KEYWORD` | `coderabbit:review` | In `auto` mode, request CodeRabbit when this PR title/body keyword is present. |
+| `SIGNALS_CLI_REVIEW_LOG` | path | When CLI review runs, save the full CodeRabbit stdout/stderr transcript before relying on it as durable evidence. |
 
 The default (`auto`) is deliberately frugal: active draft PRs do not request
 CodeRabbit until they are marked ready. Before a PR exists, it skips CodeRabbit
 unless `SIGNALS_PRE_PR_CLI=1` is set.
+
+CLI review output is a stream, not durable PR state. In unattended sessions,
+prefer hosted CodeRabbit comments for stable findings, or run CLI review through
+the probe with `SIGNALS_CLI_REVIEW_LOG=.context/coderabbit-cli-review.log`.
+Do not keep rerunning uncaptured `cr --agent` after an interrupted pass loses
+finding bodies.
 
 ## The PR Comment Loop, Step by Step
 

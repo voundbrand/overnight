@@ -71,7 +71,7 @@ CodeRabbit review and accept the allowance/cost.
 ```bash
 curl -fsSL https://cli.coderabbit.ai/install.sh | sh
 coderabbit auth login
-coderabbit review --agent --base main    # smoke test
+SIGNALS_REVIEW_SOURCE=cli SIGNALS_CLI_REVIEW_LOG=.context/coderabbit-cli-review.log scripts/agent-signals.sh main
 ```
 
 To skip all review and check only CI for a turn:
@@ -180,7 +180,8 @@ Read the verdict line:
 
 ```text
 SIGNALS  ci=pass  coderabbit=not-requested  internal=clean  review=clean
-EXIT WHEN: review=clean (CodeRabbit or internal reviewer) AND ci=pass -> stop, report ready.
+SLICE READY WHEN: review=clean (CodeRabbit or internal reviewer) AND ci=pass -> current head is ready.
+CAMPAIGN CONTINUATION: the goal/task queue decides whether to claim the next row, readiness-prep, or stop.
 ```
 
 The agent's loop is: run the probe → for each finding, classify it
@@ -193,7 +194,7 @@ Useful knobs:
 
 ```bash
 SIGNALS_SKIP_REVIEW=1 scripts/agent-signals.sh         # CI only
-SIGNALS_REVIEW_SOURCE=cli scripts/agent-signals.sh     # force local CLI review
+SIGNALS_REVIEW_SOURCE=cli SIGNALS_CLI_REVIEW_LOG=.context/coderabbit-cli-review.log scripts/agent-signals.sh
 SIGNALS_CODERABBIT_LABEL=coderabbit-ready scripts/agent-signals.sh
 scripts/agent-signals.sh origin/release                # different base
 ```

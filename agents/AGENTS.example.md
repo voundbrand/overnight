@@ -59,7 +59,8 @@ one verdict line:
 scripts/agent-signals.sh origin/main
 # ... per-signal detail ...
 # SIGNALS  ci=pass  coderabbit=not-requested  internal=clean  review=clean
-# EXIT WHEN: review=clean (CodeRabbit or internal reviewer) AND ci=pass -> stop, report ready.
+# SLICE READY WHEN: review=clean (CodeRabbit or internal reviewer) AND ci=pass -> current head is ready.
+# CAMPAIGN CONTINUATION: the goal/task queue decides whether to claim the next row, readiness-prep, or stop.
 ```
 
 Each turn: run the probe, **classify** every finding (`actionable | invalid |
@@ -67,8 +68,10 @@ duplicate | blocked | out-of-scope`), fix only the valid actionable ones plus an
 failing check, push a new head — which re-runs CI and any requested review — then
 re-probe. Repeat until `review=clean AND ci=pass` and the required approvals
 exist. Knobs: `SIGNALS_REVIEW_SOURCE=auto|app|cli`,
-`SIGNALS_INTERNAL_REVIEW_COMMAND`, `SIGNALS_CODERABBIT_LABEL`, and
-`SIGNALS_SKIP_REVIEW=1`.
+`SIGNALS_INTERNAL_REVIEW_COMMAND`, `SIGNALS_CLI_REVIEW_LOG`,
+`SIGNALS_CODERABBIT_LABEL`, and `SIGNALS_SKIP_REVIEW=1`. If `cli` is used in an
+unattended run, set `SIGNALS_CLI_REVIEW_LOG=.context/coderabbit-cli-review.log`
+so finding bodies survive interruptions.
 
 ## Project configuration
 

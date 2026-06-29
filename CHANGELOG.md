@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format is based on
 
 ### Fixed
 
+- **CodeRabbit CLI review output can now be captured as durable overnight
+  evidence.** `scripts/agent-signals.sh` supports
+  `SIGNALS_CLI_REVIEW_LOG=.context/coderabbit-cli-review.log`, writes the full
+  stdout/stderr transcript before deleting temp files, and parses `findings=N`
+  into `coderabbit=clean` or `coderabbit=findings:N`. The docs now warn against
+  relying on transcript-only CLI streams during unattended runs.
 - **`scripts/agent-signals.sh` no longer scores a failed CodeRabbit review as
   `clean`.** When the review fetch errored (network / rate-limit / auth), the error
   went to stderr and stdout came back empty, and an empty result was read as "no

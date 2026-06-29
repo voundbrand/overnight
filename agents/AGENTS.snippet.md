@@ -57,6 +57,15 @@ code, or needs an independent pass after internal-review concerns. Do not reques
 it for early WIP, docs-only readiness prep, format-only fixes, or branches still
 failing local validation.
 
+Do not treat transcript-only CodeRabbit CLI output as durable overnight review
+evidence. If the CLI is used, run it through `scripts/agent-signals.sh` with
+`SIGNALS_REVIEW_SOURCE=cli` and
+`SIGNALS_CLI_REVIEW_LOG=.context/coderabbit-cli-review.log`, or use an internal
+reviewer command that saves full output and has a trustworthy exit status. If a
+CLI pass is interrupted after printing only `findings=N`, request hosted
+CodeRabbit or rerun once with durable capture instead of spending repeated
+uncaptured reviews.
+
 There is no kanban board, dispatcher loop, polling daemon, or required status file.
 Do not build one. Select work directly from the task queue, claim a row by setting
 `IN-PROGRESS` + `Owner` before coding, and report the closeout in the final response.

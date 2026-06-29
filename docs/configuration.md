@@ -203,7 +203,8 @@ and prints a single verdict line plus the exit condition:
 
 ```text
 SIGNALS  ci=<pass|fail|pending|no-checks|no-pr|none>  coderabbit=<...>  internal=<...>  review=<clean|findings|pending|missing|...>
-EXIT WHEN: review=clean (CodeRabbit or internal reviewer) AND ci=pass -> stop, report ready.
+SLICE READY WHEN: review=clean (CodeRabbit or internal reviewer) AND ci=pass -> current head is ready.
+CAMPAIGN CONTINUATION: the goal/task queue decides whether to claim the next row, readiness-prep, or stop.
 ```
 
 The base branch is the first positional argument and defaults to `origin/main`:
@@ -226,15 +227,21 @@ Selects where the CodeRabbit review signal comes from. Default: `auto`.
 |---|---|
 | `auto` *(default)* | **PR open + ready marker present:** read the CodeRabbit App's unresolved review threads via `gh`. **PR open without marker:** skip CodeRabbit and rely on internal review + CI. **No PR:** skip CodeRabbit unless `SIGNALS_PRE_PR_CLI=1`. |
 | `app` | **Always** read the App's PR review threads via `gh`. Credit-free and line-by-line on Pro; on the Free plan this is summary-only (0 threads). Requires an open PR — reports `no-pr` otherwise. |
-| `cli` | **Always** run `coderabbit review --agent --base <base>` locally. Spends a CLI credit/turn. Use this on the Free plan or with no hosted PR. Reports `unavailable` if the `cr` CLI isn't installed. |
+| `cli` | **Always** run `coderabbit review --agent --base <base>` locally. Spends a CLI credit/turn. Use this on the Free plan or with no hosted PR. Reports `unavailable` if the `cr` CLI isn't installed. CLI output is not durable unless `SIGNALS_CLI_REVIEW_LOG` is set. |
 
 ```bash
 # Read App threads on the PR (credit-free on Pro)
 SIGNALS_REVIEW_SOURCE=app ./scripts/agent-signals.sh
 
-# Force a local CLI review (Free plan, or before the PR exists)
-SIGNALS_REVIEW_SOURCE=cli ./scripts/agent-signals.sh origin/main
+# Force a local CLI review (Free plan, or before the PR exists) and save evidence
+SIGNALS_REVIEW_SOURCE=cli SIGNALS_CLI_REVIEW_LOG=.context/coderabbit-cli-review.log ./scripts/agent-signals.sh origin/main
 ```
+
+Do not treat transcript-only CodeRabbit CLI output as overnight review evidence.
+If the CLI is interrupted after printing a summary such as `findings=2`, the
+finding bodies are gone unless you saved them. Rerun once with
+`SIGNALS_CLI_REVIEW_LOG` or request hosted CodeRabbit on the PR so findings are
+durable in review comments.
 
 ### `SIGNALS_SKIP_REVIEW`
 
@@ -258,6 +265,7 @@ gate to be satisfied.
 | `SIGNALS_CODERABBIT_LABEL` | `coderabbit-ready` | In `auto` mode, request CodeRabbit only when the PR has this label. Set empty to disable label gating. |
 | `SIGNALS_CODERABBIT_KEYWORD` | `coderabbit:review` | In `auto` mode, request CodeRabbit when the PR title/body contains this string. |
 | `SIGNALS_PRE_PR_CLI` | `0` | Set to `1` to run the CodeRabbit CLI before a PR exists. |
+| `SIGNALS_CLI_REVIEW_LOG` | empty | When CLI review runs, save the full stdout/stderr transcript to this path before the temp files are removed. Use `.context/coderabbit-cli-review.log` for ignored local evidence. |
 | `SIGNALS_INTERNAL_REVIEW_COMMAND` | empty | Command used as the no-CodeRabbit reviewer. Exit `0` means `internal=clean`; non-zero means findings. |
 | `SIGNALS_IGNORE_CHECKS_REGEX` | empty | Extra GitHub check names to ignore when computing `ci`. The probe automatically ignores the `CodeRabbit` check when CodeRabbit was not requested. |
 
@@ -265,6 +273,10 @@ gate to be satisfied.
 SIGNALS_INTERNAL_REVIEW_COMMAND='scripts/internal-review.sh' ./scripts/agent-signals.sh
 SIGNALS_CODERABBIT_LABEL=coderabbit-ready ./scripts/agent-signals.sh origin/main
 ```
+
+If you wrap a CLI reviewer in `SIGNALS_INTERNAL_REVIEW_COMMAND`, preserve the
+reviewer's failure status; a pipeline that ends in `tee` can otherwise turn
+findings/errors into exit `0`.
 
 Agents may request CodeRabbit themselves, but should follow a spending policy:
 request it when local/row validation passes and either the PR is ready for final
