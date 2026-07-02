@@ -16,8 +16,8 @@ tracked Markdown under `implementation_plans/`, not external issues.
    `TASK_QUEUE.md`, and traceability file if present.
 3. Existing PRDs, runbooks, decision logs, architecture plans, or route/data-class
    matrices referenced by nearby rows.
-4. `docs/agents/domain.md` and `docs/agents/quality-lenses.md` when choosing
-   domain vocabulary, test seams, or quality gates.
+4. `docs/quality-lenses.md` or the repo's equivalent when choosing test seams or
+   quality gates; repo domain docs if present when choosing domain vocabulary.
 
 ## Workflow
 

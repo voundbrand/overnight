@@ -31,11 +31,11 @@ When porting to another repo, copy `template/` (see "Porting").
 
 The model is provider-agnostic. Pin these once per repo:
 
-| Knob | Example value | Notes |
+| Knob | Aktoria value | Notes |
 |---|---|---|
-| Base branch | `origin/main` | The comparison/merge target. Any non-main base works — set it once. Never assume `main` if your repo differs. |
-| Remote / PR surface | GitHub (`gh`) | Or Azure DevOps (`az repos`), GitLab, or local-only also work. Draft PRs only. |
-| Review tool | CodeRabbit App + `cr` CLI (`cr --agent --base <base>`) | Any reviewer works: a CLI reviewer, a fresh agent session, or both. |
+| Base branch | `origin/beirut` | The comparison/merge target. Never assume `main`. |
+| Remote / PR surface | Azure DevOps (`az repos`) | Or GitHub (`gh`), GitLab, or local-only. Draft PRs only. |
+| Review tool | CodeRabbit CLI (`cr --agent --base <base>`) | Any reviewer works: a CLI reviewer, a fresh agent session, or both. |
 | Quality lens source | `docs/quality-lenses.md` + `.claude/skills/` | How to pick TDD / diagnose / architecture / code-structure. |
 | Task source of truth | `implementation_plans/<plan>/TASK_QUEUE.md` | Branchability lives in the row Notes + the per-slice brief (`WORK_FORWARD_KEY_*.md` only if the plan actually has one). |
 | Escalation policy | record blocker + exact input, move to next independent slice | See "When Blocked Overnight". |
@@ -76,9 +76,9 @@ review/check state. Agent sessions are disposable execution containers.
 
 After each slice is green/clean and pushed, close that slice with a compact
 closeout and start the next slice from live repo/PR state. In UI-backed runtimes
-(Conductor is one example), **start a fresh agent session before claiming the next
-row by default**; do not keep one session tab accumulating every tool call across
-many slices. The new session should re-orient from:
+such as Conductor, **start a fresh agent session before claiming the next row by
+default**; do not keep one Conductor tab accumulating every tool call across many
+slices. The new session should re-orient from:
 
 1. the current branch and remote head,
 2. the draft PR URL and `scripts/agent-signals.sh <base>` (or the repo's
@@ -150,11 +150,11 @@ Serial/stacked work needs no orchestrator at all. To run several PRs *in paralle
    record `code-structure: not applicable (<reason>)`.
 8. **Close or advance the slice.** If the PR targets `main`/the protected base,
    leave it draft/ready for a human. If the target is an explicitly
-   agent-owned non-main integration or stack branch, the agent may merge/integrate
-   it after review/check gates are green and conflicts are resolved. Then continue
-   to the next launch-ready independent slice in autonomy-mode. If no slice is
-   launch-ready, perform readiness-prep on the next best candidate instead of
-   stopping.
+   agent-owned non-main integration or stack branch, merge/integrate the worker
+   branch back into that original parent branch after review/check gates are
+   green and conflicts are resolved. Then continue to the next launch-ready
+   independent slice in autonomy-mode. If no slice is launch-ready, perform
+   readiness-prep on the next best candidate instead of stopping.
 
 Stop the loop (don't guess) when the exit condition is met, when a comment is a
 blocker needing a human-gated decision/action (record it with the exact input
@@ -196,7 +196,7 @@ library and the six-field standard below):
 | Verification surface | Review clean (CodeRabbit/reviewer), required checks pass, required approvals present. |
 | Constraints | What must not regress (contracts, security posture, tests). |
 | Boundaries | Owned files, base branch, allowed tools/providers; never merge or push to `main`/protected base. |
-| Iteration policy | Each turn, address the latest unresolved review comments / failing checks, push, request re-review; after green/clean, integrate only to an allowed non-main branch or leave main-targeted PR ready, then claim the next launch-ready row or create the missing readiness brief/backfill. |
+| Iteration policy | Each turn, address the latest unresolved review comments / failing checks, push, request re-review; after green/clean, integrate the worker branch back into its recorded parent only when that parent is an allowed agent-owned non-main branch, or leave protected/main-targeted PRs ready for a human, then claim the next launch-ready row or create the missing readiness brief/backfill. |
 | Blocked stop | A human-gated action, no row can be implemented/made ready/advanced with a reversible assumption, or missing input that blocks all safe progress — report exact need and stop. |
 
 ### Codex (`codex/*`)
@@ -291,6 +291,39 @@ Keep coordination lightweight; the branch + draft PR are the real signal.
 - Do not create handoff prompts or separate workspace status files for routine
   reporting. No `.context/agent-status.md` requirement.
 
+## Parent Branch Integration
+
+Every worker branch has a **recorded parent branch**: the branch/ref the worker
+branched from and the branch/ref the slice must return to when it is green. This
+is what keeps stacked local wiki/progress views honest: the parent branch should
+receive the completed contract/docs/code/status updates before the next dependent
+worker starts from it.
+
+Before creating a worker branch:
+
+1. Fetch remotes and identify the parent branch/ref. For a root slice this is the
+   project base; for a stacked slice it is the previous agent-owned stack branch
+   (for example `pp-10-inspector` before `codex/db-03-*`, then `codex/db-03-*`
+   before `codex/db-04-*`).
+2. Record that parent in the slice brief, PR description, closeout, or row Notes
+   when the plan has a durable place for it.
+3. Branch the worker from that parent and target the draft PR at that same parent
+   when the host supports non-main PR targets.
+
+After the worker branch is review-clean and validation-green:
+
+1. Re-fetch and update the parent branch/ref.
+2. Integrate the worker branch back into the recorded parent only if that parent
+   is an explicitly agent-owned non-main branch. Use the provider's normal PR
+   merge flow or a local non-rewriting merge/fast-forward that preserves branch
+   policy. Resolve conflicts on the worker/parent branch, rerun validation, and
+   push the updated parent.
+3. If the recorded parent is `main`, `origin/main`, or any protected base, do not
+   integrate it yourself. Leave the draft PR ready with green evidence and stop
+   for human landing.
+4. Start the next dependent worker from the freshly updated parent branch, not
+   from the stale pre-integration parent or from `main`.
+
 ## The Review Loop Is Agnostic
 
 Defer to `pr-review-loop` for the mechanics. The provider does not matter:
@@ -299,6 +332,12 @@ Defer to `pr-review-loop` for the mechanics. The provider does not matter:
 - **A fresh independent reviewer**: a separate agent session prompted only to
   review the exact head SHA, returning findings; the implementation session owns
   fixes. Use this for non-trivial branches, with or without CodeRabbit.
+- **Durable evidence required overnight**: hosted PR review comments are durable
+  by default; CLI output is not. If a CLI reviewer is part of the loop, save the
+  full output to a file or PR comment before relying on it. For repos using
+  `scripts/agent-signals.sh`, prefer `SIGNALS_REVIEW_SOURCE=cli` with
+  `SIGNALS_CLI_REVIEW_LOG=.context/coderabbit-cli-review.log`, or configure an
+  internal reviewer command whose exit status is a real clean/findings verdict.
 - Classify every finding: `actionable` (fix + validate), `invalid` (explain, no
   change), `duplicate` (fix once), `blocked` (stop with exact input),
   `out-of-scope` (record follow-up). Fix only valid actionable findings; no
@@ -310,8 +349,8 @@ Defer to `pr-review-loop` for the mechanics. The provider does not matter:
 
 In unattended mode an agent **may**: commit to its own task branch, push that
 branch, create/update a **draft** PR for visibility, and merge/integrate branches
-it owns when the target is an explicitly non-main integration/stack branch and
-the review/check gates are green.
+it owns back into the recorded parent branch when that parent is an explicitly
+non-main integration/stack branch and the review/check gates are green.
 
 An agent **must stop and wait for a human** to: merge/complete a PR into
 `main`/`origin/main` or any protected base branch, create a non-draft PR targeting

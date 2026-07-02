@@ -42,6 +42,20 @@ worktrees (for Rust, set a local `CARGO_TARGET_DIR=/path/to/repo/.shared-cargo-t
 and pre-warm it). If a socket/API error loses the transcript, resume from durable
 branch/PR/task state and re-run `scripts/agent-signals.sh`.
 
+When using a scheduled orchestrator heartbeat, run the local preflight before
+waking an agent:
+
+```bash
+npm run plan:orchestrator:preflight -- --plan <plan-slug>
+```
+
+If your queues are not under `implementation_plans/`, also pass
+`--plans-root <plans-root>`. The preflight writes
+`.context/implementation-plan-orchestrator-state.json` and prints one verdict:
+`NO_ACTION_REQUIRED`, `ACTION_REQUIRED`, or `BLOCKED`. Do not spend a Codex,
+Claude, OpenCode, or other harness message on `NO_ACTION_REQUIRED`; only invoke
+the orchestrator for `ACTION_REQUIRED`, and make it read the state JSON first.
+
 Each turn, gather both feedback signals with one probe — `scripts/agent-signals.sh
 [base]` (default base `origin/main`) — which reads code review and CI checks and
 prints a `SIGNALS ci=… coderabbit=… internal=… review=…` line plus the exit
@@ -79,6 +93,7 @@ Project configuration (fill these in):
 | Review tool | `fresh independent reviewer by default; CodeRabbit App by coderabbit-ready label; cr CLI only when deliberate` |
 | Quality lens source | `docs/quality-lenses.md` |
 | Task source of truth | `implementation_plans/<plan>/TASK_QUEUE.md` |
+| Orchestrator preflight | `npm run plan:orchestrator:preflight -- --plan <plan-slug>` |
 
 Agents may merge/integrate only agent-owned **non-`main`** branches after green
 gates. Human-gated (stop and wait): merge/complete a PR to `main` or any protected

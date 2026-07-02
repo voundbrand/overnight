@@ -29,6 +29,8 @@
 #   SIGNALS_CLI_REVIEW_LOG=.context/coderabbit-cli-review.log
 #   SIGNALS_INTERNAL_REVIEW_COMMAND='<cmd>'    # exit 0 = clean, non-zero = findings
 #   SIGNALS_IGNORE_CHECKS_REGEX='^CodeRabbit$' # extra ignored check names
+#   SIGNALS_STRICT_CODERABBIT_PENDING=1        # wait for CodeRabbit status even
+#                                              # when all review threads resolved
 #
 # Usage:  scripts/agent-signals.sh [base-branch]     # default base: origin/main
 set -uo pipefail
@@ -48,6 +50,7 @@ INTERNAL_REVIEW_COMMAND="${SIGNALS_INTERNAL_REVIEW_COMMAND:-}"
 CLI_REVIEW_LOG="${SIGNALS_CLI_REVIEW_LOG:-}"
 IGNORE_CHECKS_REGEX="${SIGNALS_IGNORE_CHECKS_REGEX:-}"
 AUTO_IGNORE_CHECKS_REGEX=""
+STRICT_CODERABBIT_PENDING="${SIGNALS_STRICT_CODERABBIT_PENDING:-0}"
 
 # Portable temp file: prefer mktemp; in stripped environments that lack it, fall
 # back to a unique path under $TMPDIR / /tmp / . — so stderr capture (and thus the
@@ -108,7 +111,7 @@ run_cli_review() {
   if [ -n "$CLI_REVIEW_LOG" ]; then
     head="$(git rev-parse --short HEAD 2>/dev/null || echo '?')"
     mkdir -p "$(dirname "$CLI_REVIEW_LOG")" 2>/dev/null || true
-    {
+    if {
       echo "# CodeRabbit CLI review"
       echo "branch=$branch"
       echo "base=$BASE"
@@ -121,9 +124,15 @@ run_cli_review() {
         echo "## stderr"
         cat "$errf"
       fi
-    } >"$CLI_REVIEW_LOG" 2>/dev/null \
-      && echo "(CodeRabbit CLI output saved to $CLI_REVIEW_LOG)" \
-      || echo "WARNING: could not write SIGNALS_CLI_REVIEW_LOG=$CLI_REVIEW_LOG"
+    } >"$CLI_REVIEW_LOG" 2>/dev/null; then
+      echo "(CodeRabbit CLI output saved to $CLI_REVIEW_LOG)"
+    else
+      echo "ERROR: could not write SIGNALS_CLI_REVIEW_LOG=$CLI_REVIEW_LOG — refusing to treat transcript-only CLI output as a durable review signal."
+      cr_verdict="error (log-write)"
+      _cleanup_file "$outf"
+      _cleanup_file "$errf"
+      return 2
+    fi
   else
     echo "NOTE: CodeRabbit CLI output is transcript-only; set SIGNALS_CLI_REVIEW_LOG=.context/coderabbit-cli-review.log before relying on it as durable overnight evidence."
   fi
@@ -200,7 +209,7 @@ run_internal_review() {
 
 derive_review_verdict() {
   case "$cr_verdict" in
-    clean) review_verdict="clean"; return ;;
+    clean*) review_verdict="clean"; return ;;
     findings*) review_verdict="$cr_verdict"; return ;;
     in-progress) review_verdict="pending"; return ;;
     error*) review_verdict="$cr_verdict"; return ;;
@@ -233,22 +242,6 @@ read_app_review() {
   if [ -z "$errf" ]; then
     echo "ERROR: could not create temp file for CodeRabbit PR-thread lookup — review did NOT run; NOT clean. Re-probe."
     cr_verdict="error"; return
-  fi
-  inprog="$(gh pr view "$pr" --json comments,reviews --jq '
-    [ (.comments[]?, .reviews[]?) | select(.author.login | test("coderabbit"; "i")) | .body // "" ]
-    | map(select(test("Come back again in a few minutes|currently reviewing|review in progress"; "i")))
-    | length' 2>"$errf")"
-  rc=$?
-  if [ "$rc" -ne 0 ] || ! printf '%s' "$inprog" | grep -qE '^[0-9]+$'; then
-    echo "ERROR: could not read CodeRabbit PR review status (gh pr view exit $rc) — review did NOT run; NOT clean. Re-probe."
-    _print_file_head "$errf"
-    _cleanup_file "$errf"
-    cr_verdict="error"; return
-  fi
-  _cleanup_file "$errf"
-  if [ "${inprog:-0}" -gt 0 ]; then
-    echo "CodeRabbit review IN PROGRESS on PR #$pr — re-probe in a few minutes."
-    cr_verdict="in-progress"; return
   fi
   owner="$(gh repo view --json owner --jq .owner.login 2>/dev/null || true)"
   repo="$(gh repo view --json name --jq .name 2>/dev/null || true)"
@@ -302,13 +295,45 @@ read_app_review() {
   _cleanup_file "$errf"
   count="$(printf '%s\n' "$lines" | grep -c '^  - ' || true)"
   if [ "${count:-0}" = "0" ]; then
+    errf="$(_tmpfile || true)"
+    if [ -z "$errf" ]; then
+      echo "ERROR: could not create temp file for CodeRabbit PR status lookup — review did NOT run; NOT clean. Re-probe."
+      cr_verdict="error"; return
+    fi
+    inprog="$(gh pr view "$pr" --json comments,reviews --jq '
+      [ (.comments[]?, .reviews[]?) | select(.author.login | test("coderabbit"; "i")) | .body // "" ]
+      | map(select(test("Come back again in a few minutes|currently processing|currently reviewing|review in progress"; "i")))
+      | length' 2>"$errf")"
+    rc=$?
+    if [ "$rc" -ne 0 ] || ! printf '%s' "$inprog" | grep -qE '^[0-9]+$'; then
+      echo "ERROR: could not read CodeRabbit PR review status (gh pr view exit $rc) — review did NOT run; NOT clean. Re-probe."
+      _print_file_head "$errf"
+      _cleanup_file "$errf"
+      cr_verdict="error"; return
+    fi
+    _cleanup_file "$errf"
+    if [ "${inprog:-0}" -gt 0 ]; then
+      if [ "$STRICT_CODERABBIT_PENDING" = "1" ]; then
+        echo "CodeRabbit review IN PROGRESS on PR #$pr — re-probe in a few minutes."
+        cr_verdict="in-progress"; return
+      fi
+      echo "No unresolved CodeRabbit review threads on PR #$pr, but the CodeRabbit status/comment is still pending."
+      echo "Treating review threads as clean and ignoring the stuck CodeRabbit status check."
+      echo "(Set SIGNALS_STRICT_CODERABBIT_PENDING=1 to wait for the status context instead.)"
+      cr_verdict="clean-pending-status"
+      AUTO_IGNORE_CHECKS_REGEX='^CodeRabbit$'
+      return
+    fi
+    if [ "$STRICT_CODERABBIT_PENDING" != "1" ]; then
+      AUTO_IGNORE_CHECKS_REGEX='^CodeRabbit$'
+    fi
     echo "No unresolved CodeRabbit review threads on PR #$pr — clean (Pro line-by-line)."
     echo "(If the org were on Free this would be summary-only; use SIGNALS_REVIEW_SOURCE=cli there.)"
     cr_verdict="clean"
   else
     echo "$count unresolved CodeRabbit finding(s) on PR #$pr:"
     printf '%s\n' "$lines"
-    echo "(read full threads: gh pr view $pr --comments)"
+    echo "(read full threads: gh api repos/OWNER/REPO/pulls/$pr/comments --paginate)"
     cr_verdict="findings:$count"
   fi
 }
@@ -346,7 +371,7 @@ esac
 echo
 echo "## 2. Internal review fallback"
 case "$cr_verdict" in
-  clean|findings*|in-progress|error*) echo "(not run; CodeRabbit supplied the active review signal)" ;;
+  clean*|findings*|in-progress|error*) echo "(not run; CodeRabbit supplied the active review signal)" ;;
   *) run_internal_review ;;
 esac
 derive_review_verdict
@@ -387,7 +412,8 @@ if [ -n "${pr:-}" ]; then
 $checks
 EOF_CHECKS
       [ "$ignored" -gt 0 ] && echo "(ignored $ignored check(s) matching: $IGNORE_CHECKS_REGEX)"
-      if   [ "$total" = "0" ]; then ci="no-checks"
+      if   [ "$total" = "0" ] && [ "$ignored" -gt 0 ] && [ "$review_verdict" = "clean" ]; then ci="pass"
+      elif [ "$total" = "0" ]; then ci="no-checks"
       elif [ "$fails" -gt 0 ]; then ci="fail"
       elif [ "$pend"  -gt 0 ]; then ci="pending"
       else ci="pass"; fi
@@ -415,6 +441,7 @@ echo "CAMPAIGN CONTINUATION: the goal/task queue decides whether to claim the ne
 echo "  review=missing -> configure SIGNALS_INTERNAL_REVIEW_COMMAND or request CodeRabbit with the label/keyword."
 echo "  coderabbit=error -> a requested CodeRabbit review did NOT run (network/rate-limit/auth); re-probe — NEVER treat as clean."
 echo "  coderabbit=in-progress / ci=pending -> wait, re-probe."
+echo "  coderabbit=clean-pending-status -> review threads are resolved; CodeRabbit status was ignored as stuck/pending."
 echo "  ci=error -> CI status could not be read (network/auth); re-probe — do NOT treat as pass."
 echo "  ci=no-pr -> open a draft PR first (command above)."
 echo "  Merge stays HUMAN-GATED."

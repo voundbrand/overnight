@@ -52,7 +52,7 @@ Project configuration:
 | Base branch | `<origin/main>` (any non-main base also works) |
 | Remote / PR surface | `<GitHub gh (default) / Azure DevOps az repos / GitLab / local-only>` (draft PRs only) |
 | Review tool | `<CodeRabbit cr / fresh reviewer session / both>` |
-| Quality lens source | `<docs/agents/quality-lenses.md or equivalent>` |
+| Quality lens source | `<docs/quality-lenses.md + .claude/skills/ or equivalent>` |
 | Task source of truth | `<implementation_plans/<your-plan>/TASK_QUEUE.md>` |
 
 Agents may merge/integrate only agent-owned non-main branches after green gates.

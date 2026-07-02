@@ -83,11 +83,14 @@ and the exit condition. Full detail in **[docs/how-it-works.md](docs/how-it-work
 
 | Component | Path | What it does |
 |---|---|---|
+| **Interactive setup** | `.claude/skills/overnight-setup/` | Inspect a target repo, ask the missing setup questions, install/upgrade the library, wire AGENTS/package scripts, and validate. |
 | **Overnight runbook** | `.claude/skills/overnight-agent-runbook/` | The canonical operating model + a prompt library (`template/`). The engine. |
 | **PR review loop** | `.claude/skills/pr-review-loop/` | The review mechanics: classify findings, fix the valid ones, re-review the new head. |
-| **Stacked-PR orchestrator** | `.claude/skills/stacked-pr-orchestrator/` | *Optional.* Run multiple PRs in parallel (git worktrees, Conductor workspaces, or paseo). |
+| **Stacked-PR orchestrator** | `.claude/skills/stacked-pr-orchestrator/` | *Optional.* Run multiple PRs in parallel through the human-selected harness's native agent/session spawning. |
 | **Signals probe** | `scripts/agent-signals.sh` | One per-turn command that gathers review + CI and prints the exit condition. |
+| **Orchestrator preflight** | `scripts/implementation-plan-orchestrator-preflight.mjs` | Cheap local no-op gate that parses the task queue and `.context` scratch files before spending an agent message. |
 | **PRD → task queue** | `.claude/skills/prd-to-task-queue/` | Turn a PRD / spec / conversation into repo-native plan docs + `TASK_QUEUE.md` rows. |
+| **Implementation plan builder** | `.claude/skills/implementation-plan-builder/` | Create or upgrade a complete plan folder: index, master plan, queue, decisions, launch-ready briefs, and preflight wiring. |
 | **Plan wiki** | `.claude/skills/implementation-plan-wiki/` | Build a static site from the plan markdown for humans to browse. |
 | **Quality lenses** | `.claude/skills/{engineering-quality-lens,tdd,diagnose,architecture-review,code-structure}/` | Pick the smallest engineering discipline that changes the decision. |
 | **Agent contract** | `agents/AGENTS.snippet.md` + `AGENTS.example.md` | The section you paste into your repo's `AGENTS.md`/`CLAUDE.md`. |
@@ -118,13 +121,21 @@ cd overnight
 #    cp -r overnight/examples/implementation_plans/example_plan \
 #          your-repo/implementation_plans/my_plan
 
-# 5. Start a slice: branch, open a DRAFT PR, watch the signals
+# 5. Add the cheap orchestrator preflight script to package.json
+#    "plan:orchestrator:preflight": "node scripts/implementation-plan-orchestrator-preflight.mjs"
+#
+#    If your queue lives outside implementation_plans/, pass --plans-root and --plan:
+#    npm run plan:orchestrator:preflight -- --plans-root 000_implementation_plans_all --plan crm_revamp
+#
+#    Only wake a Codex/Claude/OpenCode orchestrator when it prints ACTION_REQUIRED.
+
+# 6. Start a slice: branch, open a DRAFT PR, watch the signals
 cd /path/to/your-repo
 git switch -c feat/my-first-slice
 gh pr create --draft --base main --fill
 ./scripts/agent-signals.sh           # prints SIGNALS ci=… review=…
 
-# 6. Make it unattended (pick your harness's persistence loop)
+# 7. Make it unattended (pick your harness's persistence loop)
 #    • Claude Code ≥ 2.1.139:  /goal <six-field contract>
 #    • Claude Code (older):    the /loop skill, or a Stop hook
 #    • Codex:                  /goal <six-field contract>
@@ -211,6 +222,8 @@ overnight/
 │   └── AGENTS.example.md         ← a filled-in example
 ├── .claude/skills/               ← the portable skills (the engine + quality lenses)
 ├── scripts/agent-signals.sh      ← the per-turn signals probe
+├── scripts/implementation-plan-orchestrator-preflight.mjs
+│                                   ← cheap local no-op gate before waking agents
 ├── docs/                         ← how-it-works, quickstart, configuration, autonomy-engine, faq
 ├── examples/implementation_plans/example_plan/   ← a neutral example plan
 ├── .coderabbit.example.yaml      ← reviewer config template

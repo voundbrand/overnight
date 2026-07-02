@@ -11,9 +11,11 @@ discipline before closeout.
 
 ## Required Reading
 
-1. `docs/agents/quality-lenses.md`
-2. `docs/agents/domain.md`
-3. The relevant `implementation_plans/<plan>/TASK_QUEUE.md` row and references
+1. `docs/quality-lenses.md`, or the repo's configured equivalent.
+2. Repo domain docs if present and relevant, such as `docs/domain.md`,
+   `docs/agents/domain.md`, or a plan-specific architecture/domain doc.
+3. The relevant task queue row under the repo's configured implementation-plan
+   root, plus its referenced design docs, decisions, and briefs.
 
 ## Workflow
 

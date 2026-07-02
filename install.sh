@@ -4,11 +4,16 @@
 # Usage:
 #   ./install.sh /path/to/your-repo            # non-destructive: never overwrites existing files
 #   ./install.sh /path/to/your-repo --force    # overwrite existing files with the packaged versions
+#   ./install.sh /path/to/your-repo --without-quality-lenses
+#                                                # skip quality companion skills
 #   ./install.sh --help
 #
 # What it copies:
-#   .claude/skills/*            the portable skills (engine + quality lenses)
+#   .claude/skills/*            the portable skills (setup, engine, plan builder,
+#                               quality lenses unless --without-quality-lenses)
 #   scripts/agent-signals.sh    the per-turn review + CI signals probe
+#   scripts/implementation-plan-orchestrator-preflight.mjs
+#                               cheap local no-op gate before waking an orchestrator
 #   docs/*                      how-it-works / quickstart / configuration / autonomy-engine / faq
 #                               + quality-lenses / code-review-guidelines / parallel-repo-write-protocol
 #   agents/*                    AGENTS.md / CLAUDE.md snippets to paste into the target repo
@@ -27,10 +32,12 @@ usage() { sed -n '2,30p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit "${1:-
 
 TARGET=""
 FORCE=0
+INSTALL_QUALITY_LENSES=1
 for arg in "$@"; do
   case "$arg" in
     --help|-h) usage 0 ;;
     --force)   FORCE=1 ;;
+    --without-quality-lenses) INSTALL_QUALITY_LENSES=0 ;;
     -*)        echo "unknown flag: $arg" >&2; usage 1 ;;
     *)         TARGET="$arg" ;;
   esac
@@ -65,15 +72,40 @@ copy_tree() {
   done < <(find "$srcdir" -type f -print0)
 }
 
+is_quality_skill_rel() {
+  case "$1" in
+    architecture-review/*|code-structure/*|diagnose/*|engineering-quality-lens/*|tdd/*)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+copy_skills_tree() {
+  local srcdir="$1" dstdir="$2" rel
+  [ -d "$srcdir" ] || return 0
+  while IFS= read -r -d '' f; do
+    rel="${f#$srcdir/}"
+    if [ "$INSTALL_QUALITY_LENSES" -ne 1 ] && is_quality_skill_rel "$rel"; then
+      echo "  skip (quality opt-out): ${dstdir#$TARGET/}/$rel"; skipped=$((skipped+1)); continue
+    fi
+    copy_file "$f" "$dstdir/$rel"
+  done < <(find "$srcdir" -type f -print0)
+}
+
 echo "Installing Overnight into: $TARGET"
 echo
 
 echo "• skills (.claude/skills/)"
-copy_tree "$SELF_DIR/.claude/skills" "$TARGET/.claude/skills"
+copy_skills_tree "$SELF_DIR/.claude/skills" "$TARGET/.claude/skills"
 
-echo "• signals probe (scripts/)"
+echo "• orchestration scripts (scripts/)"
 copy_file "$SELF_DIR/scripts/agent-signals.sh" "$TARGET/scripts/agent-signals.sh"
 chmod +x "$TARGET/scripts/agent-signals.sh" 2>/dev/null || true
+copy_file "$SELF_DIR/scripts/implementation-plan-orchestrator-preflight.mjs" "$TARGET/scripts/implementation-plan-orchestrator-preflight.mjs"
+chmod +x "$TARGET/scripts/implementation-plan-orchestrator-preflight.mjs" 2>/dev/null || true
 
 echo "• docs (docs/)"
 copy_tree "$SELF_DIR/docs" "$TARGET/docs"
@@ -103,4 +135,7 @@ echo "  2. Wire a reviewer: use a fresh independent reviewer by default; add"
 echo "     CodeRabbit only for deliberate ready heads (App label/keyword or 'cr' CLI)."
 echo "  3. Create implementation_plans/<plan>/TASK_QUEUE.md"
 echo "     (copy examples/implementation_plans/example_plan/ or use the prd-to-task-queue skill)."
-echo "  4. Read docs/quickstart.md and start your first slice."
+echo "  4. Add an npm script such as:"
+echo "     \"plan:orchestrator:preflight\": \"node scripts/implementation-plan-orchestrator-preflight.mjs\""
+echo "     If your plans live outside implementation_plans/, pass --plans-root and --plan."
+echo "  5. Read docs/quickstart.md and start your first slice."
