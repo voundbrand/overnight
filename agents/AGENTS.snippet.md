@@ -89,7 +89,7 @@ Project configuration (fill these in):
 | Knob | Value |
 |---|---|
 | Base branch | `origin/main` |
-| Remote / PR surface | `GitHub gh` (draft PRs only) — or Azure DevOps `az repos` / GitLab / local-only |
+| Remote / PR surface | `GitHub gh` (draft PRs only; packaged signals probe) — or Azure DevOps / GitLab / local-only with a custom signals probe |
 | Review tool | `fresh independent reviewer by default; CodeRabbit App by coderabbit-ready label; cr CLI only when deliberate` |
 | Quality lens source | `docs/quality-lenses.md` |
 | Task source of truth | `implementation_plans/<plan>/TASK_QUEUE.md` |

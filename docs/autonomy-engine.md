@@ -228,8 +228,8 @@ posture, existing tests, performance>.
 
 Scope / Boundaries: include <TASK ROWS / FILES / WORKSTREAMS IN SCOPE>; exclude
 <OUT OF SCOPE>. Base: <origin/main, or any non-main base — set once>. Remote/PR:
-<GitHub gh (default) / Azure DevOps az repos / GitLab / local-only> — draft PRs
-only. Use <ALLOWED TOOLS / PROVIDERS / DATA>. Never merge or push to
+<GitHub gh (default packaged probe) / Azure DevOps / GitLab / local-only with custom
+probe> — draft PRs only. Use <ALLOWED TOOLS / PROVIDERS / DATA>. Never merge or push to
 main/protected base.
 
 Iteration policy: <each turn, run the probe, classify findings (actionable |

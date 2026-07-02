@@ -62,8 +62,8 @@ git diff --check
 For non-trivial generator or plan changes:
 
 - use the repo review loop (`.claude/skills/pr-review-loop/SKILL.md`) when creating a
-  review branch or draft pull request (GitHub by default; Azure DevOps or GitLab
-  also work);
+  review branch or draft pull request (GitHub by default; other providers need
+  their configured review/check probe);
 - run or read CodeRabbit feedback when available;
 - use an independent review pass for schema, parser, or deployment-protection
   changes;

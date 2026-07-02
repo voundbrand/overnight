@@ -4,10 +4,13 @@
 #   1. Code review        (CodeRabbit when requested, or an internal reviewer)
 #   2. GitHub Actions     (required-checks signal) — gh pr checks
 #
-# Runtime-agnostic: Codex /goal and a Claude /loop both call this, surface its
-# output, and decide whether the exit condition holds. It does NOT auto-classify
-# findings — per AGENTS.md the agent classifies each finding (actionable | invalid
-# | duplicate | blocked | out-of-scope) and fixes only the valid actionable ones.
+# This is the packaged GitHub/gh implementation of the generic signals-probe
+# contract. Runtime-agnostic harnesses (Codex /goal, Claude /loop, etc.) call this,
+# surface its output, and decide whether the exit condition holds. Other PR
+# providers should replace this probe with equivalent provider-specific commands.
+# It does NOT auto-classify findings — per AGENTS.md the agent classifies each
+# finding (actionable | invalid | duplicate | blocked | out-of-scope) and fixes
+# only the valid actionable ones.
 #
 # Review source (SIGNALS_REVIEW_SOURCE):
 #   auto (default) — PR open + CodeRabbit-ready marker present: read the

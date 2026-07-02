@@ -81,7 +81,7 @@ here so an unattended agent never has to guess them.
 | Knob | Value |
 |---|---|
 | Base branch | `origin/main` (any non-main base also works — set it once) |
-| Remote / PR surface | GitHub `gh`, **draft PRs only** (Azure DevOps `az repos` / GitLab / local-only also work) |
+| Remote / PR surface | GitHub `gh`, **draft PRs only** (packaged signals probe); Azure DevOps / GitLab / local-only require a custom signals probe |
 | Review tool | Fresh independent reviewer by default; CodeRabbit App by `coderabbit-ready` label; `cr` CLI only when deliberate |
 | Quality lens source | `docs/quality-lenses.md` |
 | Task source of truth | `implementation_plans/<plan>/TASK_QUEUE.md` |

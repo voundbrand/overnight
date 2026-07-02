@@ -7,9 +7,9 @@ Seed this as the thread's native `/goal` (see the runbook's "Autonomy Engine").
 On **Codex**, use the full contract below; completion is evidence-checked. On
 **Claude Code**, set `/goal` with a condition the agent demonstrates in the
 transcript — it must run `gh pr view --json statusCheckRollup,reviewDecision,reviews`
-(or the `az repos` / GitLab equivalent) and surface a compact reviewer/check
-verdict each turn, since the evaluator only reads the conversation — and run with
-auto mode. Do not add a `stop after N turns` clause or token budget unless the
+(or an explicitly configured provider-specific signals probe) and surface a compact
+reviewer/check verdict each turn, since the evaluator only reads the conversation
+— and run with auto mode. Do not add a `stop after N turns` clause or token budget unless the
 user explicitly requests a cap; let provider/account usage settings be the
 runtime limit. The heartbeat is the fallback only if a provider has no native goal. For Conductor or
 another UI-backed runtime, do not run many completed slices through one long-lived

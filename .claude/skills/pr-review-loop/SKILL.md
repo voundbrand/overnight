@@ -18,7 +18,8 @@ machine.
 - A hosted pull/merge request is optional. The default hosted surface is GitHub
   via the `gh` CLI. Use it when the user wants visible PR discussion, CI checks,
   branch protection status, or a human merge gate. Azure DevOps (`az repos`) and
-  GitLab also work if that is where the remote lives.
+  GitLab can use the same loop when the target repo provides equivalent provider
+  commands or a replacement signals probe.
 - An external issue tracker is optional for planning or follow-up issues. Do not
   use it as the review queue, comment source of truth, or clean/dirty verdict.
 - Workspace status files are optional local coordination aids. Do not require
@@ -73,9 +74,10 @@ gh pr view --comments
 
 If `gh` is unavailable or not authenticated, use the provider web UI if
 available and report that CLI PR inspection was unavailable. Azure DevOps
-(`az repos pr list|show|create`) and GitLab (`glab mr`) are equivalent
-alternatives when the remote lives there. Existing configured credentials may be
-used; do not create, rotate, or reconfigure credentials unless the user asks.
+(`az repos pr list|show|create`) and GitLab (`glab mr`) are equivalent workflow
+targets only when the repo has chosen that surface and the review/check probe has
+been adapted. Existing configured credentials may be used; do not create, rotate,
+or reconfigure credentials unless the user asks.
 
 ## 3. Run Or Read CodeRabbit
 

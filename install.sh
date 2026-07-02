@@ -136,6 +136,6 @@ echo "     CodeRabbit only for deliberate ready heads (App label/keyword or 'cr'
 echo "  3. Create implementation_plans/<plan>/TASK_QUEUE.md"
 echo "     (copy examples/implementation_plans/example_plan/ or use the prd-to-task-queue skill)."
 echo "  4. Add an npm script such as:"
-echo "     \"plan:orchestrator:preflight\": \"node scripts/implementation-plan-orchestrator-preflight.mjs\""
+echo "     \"plan:orchestrator:preflight\": \"node scripts/implementation-plan-orchestrator-preflight.mjs --plan <plan-slug>\""
 echo "     If your plans live outside implementation_plans/, pass --plans-root and --plan."
 echo "  5. Read docs/quickstart.md and start your first slice."

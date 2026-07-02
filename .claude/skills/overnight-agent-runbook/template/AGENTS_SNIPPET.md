@@ -50,7 +50,7 @@ Project configuration:
 | Knob | Value |
 |---|---|
 | Base branch | `<origin/main>` (any non-main base also works) |
-| Remote / PR surface | `<GitHub gh (default) / Azure DevOps az repos / GitLab / local-only>` (draft PRs only) |
+| Remote / PR surface | `<GitHub gh (default, packaged probe) / Azure DevOps / GitLab / local-only with custom probe>` (draft PRs only) |
 | Review tool | `<CodeRabbit cr / fresh reviewer session / both>` |
 | Quality lens source | `<docs/quality-lenses.md + .claude/skills/ or equivalent>` |
 | Task source of truth | `<implementation_plans/<your-plan>/TASK_QUEUE.md>` |

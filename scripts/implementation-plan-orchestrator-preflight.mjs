@@ -7,7 +7,7 @@ import { execFileSync } from "node:child_process";
 const repoRoot = path.resolve(import.meta.dirname, "..");
 
 const defaults = {
-  plan: "playbooks_teamwork_workbench",
+  plan: "",
   contextDir: ".context",
   stateFile: ".context/implementation-plan-orchestrator-state.json",
   plansRoot: "implementation_plans",
@@ -47,6 +47,9 @@ function parseArgs(argv) {
   assertPositiveInteger(options.maxActive, "--max-active");
   assertPositiveInteger(options.staleMinutes, "--stale-minutes");
   assertPositiveInteger(options.spawnCooldownMinutes, "--spawn-cooldown-minutes");
+  if (!options.plan) {
+    throw new Error("--plan is required; pass the plan folder that contains TASK_QUEUE.md");
+  }
   return options;
 }
 
@@ -64,7 +67,7 @@ canonical TASK_QUEUE.md plus scratch assignment/closeout files, writes a compact
 state JSON, and prints NO_ACTION_REQUIRED, ACTION_REQUIRED, or BLOCKED.
 
 Options:
-  --plan <slug>                    Plan slug under implementation_plans/ (default: ${defaults.plan})
+  --plan <slug>                    Plan slug under implementation_plans/ (required)
   --plans-root <path>              Plans root directory (default: ${defaults.plansRoot})
   --context-dir <path>             Scratch context directory (default: ${defaults.contextDir})
   --state-file <path>              State JSON path (default: ${defaults.stateFile})

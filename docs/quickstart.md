@@ -6,8 +6,9 @@ is the **pull request and its review**: an agent opens a draft PR early, then lo
 the reviewer is clean **and** CI passes **and** required approvals exist. No kanban
 board, no dispatcher, no polling daemon. Merge to `main` stays human-gated.
 
-Targets GitHub (`gh`) by default. Azure DevOps (`az repos`) and GitLab also work —
-see step 5. Works with any harness (Claude Code, Codex, Cursor, OpenCode).
+Targets GitHub (`gh`) by default. Azure DevOps, GitLab, and local-only flows can
+use the same model with a replacement signals probe. Works with any harness
+(Claude Code, Codex, Cursor, OpenCode).
 
 ## Prerequisites
 
@@ -163,14 +164,16 @@ gh pr create --draft --base main --fill
 > **Other PR surfaces.** Azure DevOps:
 > `az repos pr create --draft --source-branch $(git branch --show-current) --target-branch main`.
 > GitLab: `glab mr create --draft --fill`. Set the base once via the
-> snippet's *Base branch* knob; any non-`main` base also works.
+> snippet's *Base branch* knob; any non-`main` base also works. The shipped
+> `scripts/agent-signals.sh` still uses GitHub `gh`; replace it with an equivalent
+> provider-specific probe before relying on automated review/check signals there.
 
 ---
 
 ## 6. Run the loop signals
 
-One probe gathers **both** feedback signals — code review and the GitHub Actions
-checks — and prints the exit condition:
+One GitHub-first probe gathers **both** feedback signals — code review and the
+GitHub Actions checks — and prints the exit condition:
 
 ```bash
 scripts/agent-signals.sh            # base defaults to origin/main

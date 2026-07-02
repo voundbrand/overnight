@@ -34,8 +34,10 @@ flight, the PR thread becomes the message bus and the shared state, and the agen
 drives it to done.
 
 This makes the system **harness-agnostic** (Claude Code, Codex, Cursor,
-OpenCode all work) and **tool-agnostic** on the PR surface, because the only
-thing it depends on is a PR that can be reviewed and a way to read the review.
+OpenCode all work) and **GitHub-first** on the packaged PR surface. The loop only
+depends on a PR that can be reviewed and a way to read review/check state; the
+shipped probe implements that for GitHub `gh`, and other providers need an
+equivalent adapter.
 
 ## The Two Feedback Signals
 
@@ -44,8 +46,8 @@ Every iteration is driven by exactly two signals:
 1. **The code review** — line-by-line findings from CodeRabbit (the recommended
    reviewer), or from a fresh independent reviewer session as a fallback. This is
    the *review-comment* signal.
-2. **The CI checks** — GitHub Actions check results on the PR head. This is the
-   *required-checks* signal.
+2. **The CI checks** — GitHub Actions check results on the PR head in the packaged
+   probe. This is the *required-checks* signal.
 
 A new commit (a new head SHA) re-runs CI. CodeRabbit re-reviews only when the PR
 is marked ready for CodeRabbit or when you explicitly request it. Otherwise the
@@ -54,9 +56,11 @@ loop converges as the agent resolves findings and fixes failures.
 
 ## The Probe: `scripts/agent-signals.sh`
 
-One script gathers both signals in one place so the agent never has to remember
-which commands to run or how to read them. It is the single per-turn probe an
-autonomous thread runs.
+The packaged GitHub script gathers both signals in one place so the agent never
+has to remember which `gh` commands to run or how to read them. It is the single
+per-turn probe an autonomous thread runs. For Azure DevOps, GitLab, or local-only
+flows, keep this contract and replace the implementation with provider-specific
+review/check commands.
 
 ```bash
 scripts/agent-signals.sh [base]      # default base: origin/main
@@ -168,7 +172,7 @@ another in-progress branch owns.
                                          v
                  ┌─────────────────────────────────────────────┐
                  │  Establish branch, make first head,          │
-                 │  open a DRAFT PR  (gh pr create --draft)     │
+                 │  open a DRAFT PR  (gh pr create by default)  │
                  └───────────────────────┬─────────────────────┘
                                          │
                                          v

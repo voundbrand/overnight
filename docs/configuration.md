@@ -1,9 +1,11 @@
 # Configuration
 
-Overnight is provider-, reviewer-, and harness-agnostic. You make it concrete by
-pinning a small set of **knobs** once per repo, then wiring your agent harness to
-run a persistence loop. This page documents every knob, the `agent-signals.sh`
-environment variables, and how to wire each supported harness.
+Overnight is reviewer- and harness-agnostic, and GitHub-first on the packaged PR
+surface. You make it concrete by pinning a small set of **knobs** once per repo,
+then wiring your agent harness to run a persistence loop. This page documents
+every knob, the GitHub `agent-signals.sh` environment variables, and how to wire
+each supported harness. Other PR providers can use the same loop by replacing the
+signals probe with a provider-specific adapter.
 
 Nothing here depends on the project name "Overnight" — skills are referenced by
 their `.claude/skills/<name>/` paths, so renaming the repo changes nothing.
@@ -40,7 +42,7 @@ Pin each of these once. The defaults are chosen so that a standard GitHub repo o
 | Knob | Default | Alternatives | Set it in |
 |---|---|---|---|
 | [Base branch](#base-branch) | `origin/main` | any non-`main` base | `AGENTS.md` knobs table; `.coderabbit.yaml`; `agent-signals.sh` arg |
-| [Remote / PR surface](#remote--pr-surface) | GitHub (`gh`), draft PRs | Azure DevOps (`az repos`), GitLab, local-only | `AGENTS.md` knobs table |
+| [Remote / PR surface](#remote--pr-surface) | GitHub (`gh`), draft PRs | Azure DevOps, GitLab, local-only with a custom signals probe | `AGENTS.md` knobs table |
 | [Review tool](#review-tool) | CodeRabbit App + `cr` CLI | a fresh independent reviewer session | `AGENTS.md` knobs table; `.coderabbit.yaml`; `SIGNALS_REVIEW_SOURCE` |
 | [Quality lens source](#quality-lens-source) | `docs/quality-lenses.md` | your own discipline guide | `AGENTS.md` knobs table |
 | [Task source of truth](#task-source-of-truth) | `implementation_plans/<your-plan>/TASK_QUEUE.md` | any markdown queue | `AGENTS.md` knobs table |
@@ -80,17 +82,17 @@ gh pr create --draft --base main --fill
 
 ### Remote / PR surface
 
-Where the pull request lives. **GitHub (`gh`) is the default and the primary
-documented surface** — the signals probe, the CodeRabbit GitHub App, and the
-example CI workflow all assume `gh`. Tool-agnosticism is a feature: the same loop
-runs on other surfaces, they are just secondary.
+Where the pull request lives. **GitHub (`gh`) is the default and the packaged
+surface** — the signals probe, the CodeRabbit GitHub App, and the example CI
+workflow all assume `gh`. The loop itself is portable, but other surfaces need an
+equivalent probe that reads their review comments and required-check status.
 
 | Surface | CLI | Status | Notes |
 |---|---|---|---|
 | **GitHub** | `gh` | **Default** | Draft PR + GitHub Actions checks + CodeRabbit App. `agent-signals.sh` is written for this. |
-| Azure DevOps | `az repos` | Alternative | Draft PRs supported; swap the `gh` calls in the probe for `az repos pr` equivalents and read your pipeline's check status. |
-| GitLab | `glab` | Alternative | Draft ("Draft:" title prefix) merge requests + GitLab CI. |
-| Local-only | — | Supported | Run the review loop without a hosted PR; use `SIGNALS_SKIP_REVIEW=1` or the `cli` review source and your own CI command. |
+| Azure DevOps | `az repos` | Portable target | Draft PRs supported; replace the `gh` calls in the probe with `az repos pr` equivalents and read your pipeline's check status. |
+| GitLab | `glab` | Portable target | Draft ("Draft:" title prefix) merge requests + GitLab CI; replace the GitHub probe with GitLab MR/comment/check commands. |
+| Local-only | — | Portable target | Run the review loop without a hosted PR by replacing the PR/check probe with local commands, or use `SIGNALS_SKIP_REVIEW=1` / `cli` review source for a narrower loop. |
 
 Whatever you pick, the rule is identical: **draft PRs only**, and the agent never
 completes a PR into `main`/a protected base. Record your choice in the knobs table:
@@ -197,8 +199,8 @@ This policy is enforced by prose, not config — it lives in `AGENTS.md` (from
 
 ## `agent-signals.sh` environment variables
 
-`scripts/agent-signals.sh [base-branch]` is the one per-turn probe. It gathers
-**both** feedback signals — code review and the GitHub Actions checks —
+`scripts/agent-signals.sh [base-branch]` is the packaged GitHub per-turn probe. It
+gathers **both** feedback signals — code review and the GitHub Actions checks —
 and prints a single verdict line plus the exit condition:
 
 ```text
@@ -407,5 +409,6 @@ gh pr create --draft --base main --fill
 claude -p "/goal <six-field contract from template/goal-prompt.md>"
 ```
 
-Swap GitHub for Azure DevOps or GitLab, CodeRabbit for a fresh reviewer session, or
-`/goal` for a `/loop` re-prompt — the loop and the exit condition are unchanged.
+To use Azure DevOps, GitLab, or local-only review/check sources, keep the loop and
+exit condition but swap in a provider-specific signals probe. You can also swap
+CodeRabbit for a fresh reviewer session, or `/goal` for a `/loop` re-prompt.

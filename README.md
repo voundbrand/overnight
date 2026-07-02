@@ -35,10 +35,12 @@ else to keep in sync, because the branch, the PR, the checks, and the task row a
 the durable state. Sessions are disposable.
 
 This is the operating model distilled from running real implementation work
-unattended across many slices and many nights. It is **tool-agnostic** (Claude Code,
-Codex, Cursor, OpenCode), **provider-agnostic** (GitHub `gh` by default; Azure
-DevOps and GitLab also work), and **review-agnostic** (a fresh independent
+unattended across many slices and many nights. It is **harness-agnostic** (Claude
+Code, Codex, Cursor, OpenCode), **GitHub-first** (the shipped probe uses `gh` for
+PR review threads and checks), and **review-agnostic** (a fresh independent
 reviewer works by default; CodeRabbit is an optional high-signal reviewer).
+Other PR surfaces can use the same loop by replacing the signals probe with an
+adapter for that provider.
 
 ## How it works (in one diagram)
 
@@ -48,7 +50,7 @@ reviewer works by default; CodeRabbit is an optional high-signal reviewer).
                   │  TASK_QUEUE  (no board, no dispatcher)          │
                   └───────────────────────┬────────────────────────┘
                                           │
-                          open a DRAFT PR early (gh)
+                          open a DRAFT PR early (GitHub `gh` by default)
                                           │
               ┌───────────────────────────▼───────────────────────────┐
               │                THE LOOP (per head SHA)                 │
@@ -122,7 +124,7 @@ cd overnight
 #          your-repo/implementation_plans/my_plan
 
 # 5. Add the cheap orchestrator preflight script to package.json
-#    "plan:orchestrator:preflight": "node scripts/implementation-plan-orchestrator-preflight.mjs"
+#    "plan:orchestrator:preflight": "node scripts/implementation-plan-orchestrator-preflight.mjs --plan my_plan"
 #
 #    If your queue lives outside implementation_plans/, pass --plans-root and --plan:
 #    npm run plan:orchestrator:preflight -- --plans-root 000_implementation_plans_all --plan crm_revamp
@@ -152,8 +154,9 @@ Full walkthrough: **[docs/quickstart.md](docs/quickstart.md)**.
 - **A coding-agent harness** — Claude Code, Codex, Cursor, or OpenCode. Skills in
   `.claude/skills/` are auto-discovered by Claude Code (invoke as `/<name>`); other
   harnesses resolve them via the `.claude/skills/...` paths referenced from `AGENTS.md`.
-- **Git** and a remote. **GitHub** (`gh` CLI) is the default; Azure DevOps (`az repos`)
-  and GitLab also work; local-only is supported for the loop without a hosted PR.
+- **Git** and a remote. **GitHub** (`gh` CLI) is the packaged default. Azure DevOps,
+  GitLab, and local-only flows are portable targets, but require a provider-specific
+  replacement for the shipped `gh` signals probe.
 - **A reviewer**: a fresh independent reviewer session/command by default.
   Optional — the [CodeRabbit](https://coderabbit.ai) GitHub App or `cr` CLI for
   deliberate review passes.
@@ -199,7 +202,7 @@ Pin these once per repo (the knobs table in your `AGENTS.md`):
 | Knob | Default | Alternatives |
 |---|---|---|
 | Base branch | `origin/main` | any non-`main` base — set it once |
-| Remote / PR surface | GitHub (`gh`), draft PRs | Azure DevOps (`az repos`), GitLab, local-only |
+| Remote / PR surface | GitHub (`gh`), draft PRs | Azure DevOps, GitLab, local-only with a custom signals probe |
 | Review tool | CodeRabbit App + `cr` CLI | a fresh independent reviewer session |
 | Quality lens source | `docs/quality-lenses.md` | your own discipline guide |
 | Task source of truth | `implementation_plans/<plan>/TASK_QUEUE.md` | any markdown queue |

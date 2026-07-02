@@ -29,12 +29,13 @@ When porting to another repo, copy `template/` (see "Porting").
 
 ## Configure For Your Project
 
-The model is provider-agnostic. Pin these once per repo:
+The model is harness-agnostic and GitHub-first in the packaged signals probe. Pin
+these once per repo:
 
 | Knob | Aktoria value | Notes |
 |---|---|---|
 | Base branch | `origin/beirut` | The comparison/merge target. Never assume `main`. |
-| Remote / PR surface | Azure DevOps (`az repos`) | Or GitHub (`gh`), GitLab, or local-only. Draft PRs only. |
+| Remote / PR surface | GitHub (`gh`) | Draft PRs only. Azure DevOps, GitLab, or local-only require a provider-specific signals probe. |
 | Review tool | CodeRabbit CLI (`cr --agent --base <base>`) | Any reviewer works: a CLI reviewer, a fresh agent session, or both. |
 | Quality lens source | `docs/quality-lenses.md` + `.claude/skills/` | How to pick TDD / diagnose / architecture / code-structure. |
 | Task source of truth | `implementation_plans/<plan>/TASK_QUEUE.md` | Branchability lives in the row Notes + the per-slice brief (`WORK_FORWARD_KEY_*.md` only if the plan actually has one). |
@@ -223,8 +224,9 @@ each turn, such as one `SIGNALS ...` verdict line plus any blocker summary. Good
 "PR `<url>` has all required checks green, no unresolved review comments, and
 required approvals — shown by running `scripts/agent-signals.sh <base>` or
 `gh pr view --json statusCheckRollup,reviewDecision,reviews` and summarizing the
-review/check verdict in this conversation." Name the constraints that must not
-change and pair with **auto mode** so tool calls run unattended. Do not include
+review/check verdict in this conversation." For non-GitHub PR surfaces, run the
+equivalent provider probe and surface the same compact verdict. Name the constraints
+that must not change and pair with **auto mode** so tool calls run unattended. Do not include
 `stop after N turns` unless
 the user explicitly asks for a bounded run. Condition limit: 4,000 chars. Works headless:
 `claude -p "/goal …"`.

@@ -53,10 +53,11 @@ manual sessions.
 
 ## Does it need GitHub?
 
-**No.** It's provider-agnostic. **GitHub (`gh`) is the documented default** with
-draft PRs. **Azure DevOps (`az repos`)** and **GitLab** also work, and
-**local-only** is supported for running the loop without a hosted PR. Set the PR
-surface once in your `AGENTS.md` knobs table.
+**The packaged probe is GitHub-first.** Overnight's loop is provider-portable, but
+`scripts/agent-signals.sh` ships as a GitHub `gh` implementation: it reads PR
+review threads and checks from GitHub. Azure DevOps, GitLab, and local-only flows
+can use the same task/PR/review model by replacing that probe with provider-specific
+commands and recording the PR surface in your `AGENTS.md` knobs table.
 
 ## How does it avoid runaway cost?
 
