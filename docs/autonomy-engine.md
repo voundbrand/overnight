@@ -1,9 +1,9 @@
 # The Autonomy Engine
 
 What makes a coding agent keep working unattended — overnight, across many slices —
-is not a daemon, a dispatcher, or a coordination board. It is a **persistence loop**:
-an after-each-turn check that re-continues the thread until the pull request's exit
-condition holds, instead of stopping after one turn.
+is not a daemon, a dispatcher, or a coordination board. It is one
+**persistence loop**: an after-each-turn check that re-continues the thread until
+the selected outcome condition holds, instead of stopping after one turn.
 
 The recursion on the *review* side can be automatic (for example, a CodeRabbit App
 review on PRs marked ready) or explicit (a fresh independent reviewer command or
@@ -12,39 +12,48 @@ act on (see **[docs/how-it-works.md](how-it-works.md)** and `scripts/agent-signa
 persistence loop is the other half — the thing that keeps the agent *coming back* to
 read those signals and fix the next finding until there is nothing left to fix.
 
-This document explains the loop, the six-field contract that drives it, the two ways
-to run it (a native Goal feature vs. a scheduled re-prompt), one important nuance for
-Claude Code, and a ready-to-fill prompt.
+This document explains the loop, the six-field contract that drives it, native
+Goal as the preferred engine, the scheduled re-prompt fallback, one important
+nuance for Claude Code, and a ready-to-fill prompt.
 
 ---
 
 ## The persistence loop
 
-> **Keep re-continuing the same thread until the PR's exit condition holds.**
+> **Use one persistence loop until the selected outcome condition holds.**
 
-The exit condition is always the same shape: **review clean AND required checks pass
-AND required approvals present.** One probe gathers both feedback signals each turn:
+For a certifying PR head, the exit condition is always the same shape:
+**review clean AND required checks pass AND required approvals present.** One
+probe gathers both feedback signals each certification turn:
 
 ```bash
 scripts/agent-signals.sh [base]    # default base: origin/main
 # → SIGNALS ci=… coderabbit=… internal=… review=…  + the exit condition
 ```
 
-Each turn the agent runs the probe, classifies any new findings (actionable /
+Each certification turn the agent runs the probe, classifies any new findings (actionable /
 invalid / duplicate / blocked / out-of-scope), fixes only the valid actionable ones,
 pushes a new head — which re-triggers review and CI — and is re-continued. When the
 condition finally holds, it leaves the `main`-targeted PR ready for a human to merge
 (or integrates an agent-owned non-`main` branch), then advances to the next slice.
+
+During normal human-steered work, do not spend this loop on every intermediate
+push. Use focused local verification first, then switch to the exact-head loop
+when a branch is ready to certify or when a downstream dependency needs hosted
+evidence.
 
 It is **tool-agnostic**. Use whatever your harness provides:
 
 - **A native Goal feature**, if your tool has one (Codex `/goal`, Claude Code
   `/goal`). Both run an after-each-turn evaluator and continue automatically. Prefer
   this when available.
-- **A scheduled re-prompt** otherwise — a `/loop` skill, a Stop hook, or cron — that
-  re-sends the same contract every N minutes until the exit condition holds.
+- **A scheduled re-prompt** only when no native Goal exists — a `/loop` skill, a
+  Stop hook, or cron that re-sends the same contract every N minutes until the
+  exit condition holds.
 
-Either way the condition is the same six-field contract.
+Either way the condition is the same six-field contract. Do not wrap a native
+Goal in a second cron, polling, dispatcher, or Stop-hook loop around the same
+session.
 
 ### Session hygiene / rollover
 
@@ -162,7 +171,7 @@ also produces a readable audit trail.
 
 ---
 
-## Option B — scheduled re-prompt
+## Option B — scheduled re-prompt fallback
 
 If your harness has no native Goal, get the same behavior by re-sending the contract
 on a schedule until the exit condition holds:
@@ -179,8 +188,9 @@ on a schedule until the exit condition holds:
   claude -p "/goal <six-field contract>" >> overnight.log 2>&1
 ```
 
-Whichever you pick, the *content* re-sent is identical to Option A: the same six-field
-contract. The only difference is who pulls the trigger to re-continue.
+Whichever you pick, the *content* re-sent is identical to Option A: the same
+six-field contract. The only difference is who pulls the trigger to re-continue.
+Use this as a fallback, not on top of native `/goal`.
 
 ---
 
@@ -211,7 +221,7 @@ loop does across the night.
 Copy this, fill every `<...>`, delete the guidance, and paste it as the agent's task.
 A blank left in any field is where an unattended agent will guess — so leave none.
 This is the same template shipped at
-`.claude/skills/overnight-agent-runbook/template/goal-prompt.md`.
+`.agents/skills/overnight-agent-runbook/template/goal-prompt.md`.
 
 ```text
 /goal <OUTCOME — the observable end state that must be true when done: e.g. "PR
@@ -272,4 +282,5 @@ progress remains, or a human gate is hit.
 See also: **[docs/how-it-works.md](how-it-works.md)** (the review loop and the
 signals probe), **[docs/quality-lenses.md](quality-lenses.md)** (choosing the
 engineering discipline per slice), and
-`.claude/skills/overnight-agent-runbook/SKILL.md` (the canonical operating model).
+`.agents/skills/overnight-agent-runbook/SKILL.md` (the canonical operating model;
+mirrored to `.claude/skills/` for Claude Code).

@@ -1,0 +1,16 @@
+{
+  "name": "implementation-plan-wiki",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Generated Vercel-hosted wiki for Git-tracked implementation plans.",
+  "engines": {
+    "node": "22.x"
+  },
+  "scripts": {
+    "build": "node scripts/build-site.mjs",
+    "build:public-placeholder": "PLAN_PUBLIC_PLACEHOLDER=1 node scripts/build-site.mjs",
+    "serve": "node scripts/serve.mjs",
+    "check": "node --check scripts/build-site.mjs && node --check scripts/smoke-site.mjs && node --check scripts/serve.mjs && npm run build && node scripts/smoke-site.mjs"
+  }
+}

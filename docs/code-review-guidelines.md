@@ -1,9 +1,10 @@
 # Code Review Guidelines
 
 The repo's review discipline in one place, so a one-shot reviewer (CodeRabbit) and
-the overnight agent threads (`.claude/skills/overnight-agent-runbook`) flag the same
-things. Distilled from the *review-criteria* skills — `.claude/skills/code-structure`,
-`.claude/skills/architecture-review`, `.claude/skills/engineering-quality-lens`. The
+the overnight agent threads (`.agents/skills/overnight-agent-runbook` and mirrors)
+flag the same things. Distilled from the *review-criteria* skills —
+`.agents/skills/code-structure`, `.agents/skills/architecture-review`,
+`.agents/skills/engineering-quality-lens`. The
 *process* skills (`tdd`, `diagnose`) govern HOW a change is made, not what review
 flags, so they stay with the implementing agent.
 

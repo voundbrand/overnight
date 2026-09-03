@@ -7,8 +7,9 @@ every knob, the GitHub `agent-signals.sh` environment variables, and how to wire
 each supported harness. Other PR providers can use the same loop by replacing the
 signals probe with a provider-specific adapter.
 
-Nothing here depends on the project name "Overnight" — skills are referenced by
-their `.claude/skills/<name>/` paths, so renaming the repo changes nothing.
+Nothing here depends on the project name "Overnight". Skills are packaged under
+`.agents/skills/` and mirrored to `.claude/`, `.cursor/`, `.grok/`, and
+`.opencode/` so `AGENTS.md` can be the shared contract across harnesses.
 
 ---
 
@@ -31,6 +32,30 @@ lives in three durable places:
 The PR, its checks, and the task row are the durable *state*. The first three
 places above are durable repo configuration. Harness-local runtime settings make
 long-running sessions reliable on one machine or runner.
+
+---
+
+## Operating Modes
+
+Use the lightest mode that gives useful evidence:
+
+- **Normal local-agent mode:** bounded branch/worktree, explicit write surface,
+  focused local `Verify`, clean diff, and draft PR once coherent. This is the
+  default for human-steered daytime work.
+- **Cloud worker lane:** a disposable Linux session starts from pushed Git,
+  changes one bounded slice using synthetic fixtures, pushes a branch or draft
+  PR, and leaves a compact closeout. It does not handle local dirty files,
+  credentials, Docker Desktop, private-network services, staging, production, or
+  merge gates.
+- **Local integration train:** a controller-owned local branch/worktree that
+  merges locally verified compatible heads and runs a combined local suite. It is
+  diagnostic only until pushed and certified.
+- **Certification mode:** for stable heads, promoted dependencies, and landing
+  readiness. Reconcile to the recorded parent, push the exact head, require CI
+  for that head/base, obtain exact-head review, run `agent-signals.sh` if used,
+  and resolve or classify human feedback.
+- **Unattended mode:** use one persistence loop, preferably native `/goal`. Do
+  not wrap a native Goal in another cron/polling/dispatcher loop.
 
 ---
 
@@ -104,7 +129,8 @@ completes a PR into `main`/a protected base. Record your choice in the knobs tab
 ### Review tool
 
 The reviewer whose comments drive the loop. The review mechanics are agnostic
-(see `.claude/skills/pr-review-loop/SKILL.md`); only the reviewer changes.
+(see `.agents/skills/pr-review-loop/SKILL.md` or its harness mirror); only the
+reviewer changes.
 
 - **Default — tiered review.** Run CI, the row's Verify command, and a fresh
   independent reviewer while a branch is still moving quickly. This keeps
@@ -135,7 +161,7 @@ the decision — TDD, diagnosis, architecture review, or service-layer structure
 Don't bulk-load rule sets; pick the one lens that matters.
 
 - **Default:** `docs/quality-lenses.md` (shipped in this package) plus the lens
-  skills in `.claude/skills/`:
+  skills in `.agents/skills/` and mirrored harness dirs:
   - `engineering-quality-lens` — the chooser.
   - `tdd` — new behavior through a public seam.
   - `diagnose` — bugs, regressions, flakiness, performance.
@@ -145,23 +171,23 @@ Don't bulk-load rule sets; pick the one lens that matters.
   block in the Goal contract (`template/goal-prompt.md`) stays the same shape.
 
 ```text
-| Quality lens source | docs/quality-lenses.md + .claude/skills/ |
+| Quality lens source | docs/quality-lenses.md + .agents/skills/ and mirrors |
 ```
 
 ### Task source of truth
 
 Where work comes from. **There is no kanban board, dispatcher, polling daemon, or
-required status file** — the PR's review state is the work queue, and the rows are
-plain markdown.
+required status file** — branches, task rows, draft PRs, checks, and review
+evidence are the durable work queue; the rows are plain markdown.
 
 - **Default:** `implementation_plans/<your-plan>/TASK_QUEUE.md`. Each row carries
   status, owner, priority, and a `Writes:` ownership set; branchability and
   serial/parallel guidance live in the row Notes plus any per-slice
   `OVERNIGHT_<ID>_<slug>.md` brief.
 - **Alternative:** any markdown queue your repo already uses. Generate one from a
-  PRD, spec, or conversation with `.claude/skills/prd-to-task-queue/SKILL.md`, and
+  PRD, spec, or conversation with `.agents/skills/prd-to-task-queue/SKILL.md`, and
   build a human-browsable site from the plan with
-  `.claude/skills/implementation-plan-wiki/SKILL.md`.
+  `.agents/skills/implementation-plan-wiki/SKILL.md`.
 
 ```text
 | Task source of truth | implementation_plans/<your-plan>/TASK_QUEUE.md |
@@ -357,7 +383,9 @@ Two paths, depending on version:
   re-reviews each push, so every turn has fresh comments to act on.
 
 Skills in `.claude/skills/` are auto-discovered by Claude Code and invoked as
-`/<name>`.
+`/<name>`. The same skill content is mirrored under `.agents/skills/`,
+`.cursor/skills/`, `.grok/skills/`, and `.opencode/skills/`; keep mirrors in
+sync when editing packaged skills.
 
 ### Codex
 
@@ -372,8 +400,8 @@ Skills in `.claude/skills/` are auto-discovered by Claude Code and invoked as
 
 No native Goal feature. Use a **scheduled re-prompt** as the persistence loop: a
 recurring task or a hook that re-sends the same six-field contract until the exit
-condition holds. Cursor resolves the skills through the `.claude/skills/...` paths
-referenced from `AGENTS.md`. Keep each turn making real progress — fix the latest
+condition holds. Cursor resolves the skills through the `.cursor/skills/...`
+mirror and the shared `AGENTS.md` references. Keep each turn making real progress — fix the latest
 findings, push a new head, re-probe with `agent-signals.sh`.
 
 ### OpenCode
@@ -381,7 +409,7 @@ findings, push a new head, re-probe with `agent-signals.sh`.
 No native Goal feature. Same approach as Cursor — drive the loop with a scheduled
 re-prompt (cron, a Stop-equivalent hook, or a wrapper script) that re-sends the
 contract every N minutes. OpenCode reads the rules and skill paths from
-`AGENTS.md`.
+`AGENTS.md` and the `.opencode/skills/` mirror.
 
 ---
 
@@ -394,7 +422,7 @@ A standard GitHub repo on `main` with CodeRabbit Pro and Claude Code ≥ v2.1.13
 #   Base branch          : origin/main
 #   Remote / PR surface  : GitHub gh, draft PRs only
 #   Review tool          : fresh independent reviewer; CodeRabbit by ready label
-#   Quality lens source  : docs/quality-lenses.md + .claude/skills/
+#   Quality lens source  : docs/quality-lenses.md + .agents/skills/ and mirrors
 #   Task source of truth : implementation_plans/<your-plan>/TASK_QUEUE.md
 #   Escalation           : record blocker + exact input, move to next independent slice
 

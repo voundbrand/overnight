@@ -1,17 +1,19 @@
 # How It Works
 
-Overnight runs implementation work unattended — overnight, or any time without a
-human in the loop — by making the **pull request and its review** the engine.
+Overnight runs implementation work through durable Git state instead of a side
+controller. In normal human-steered work, an agent uses a bounded branch, focused
+local verification, and a draft PR once coherent. In unattended or high-assurance
+work, the exact source head and its review/check evidence become the engine.
 There is no kanban board, no dispatcher, no polling daemon, and no required
-status files. The agent picks one reviewable slice, opens a draft PR early, and
-loops on review feedback until the PR is clean and green. This document explains
-the architecture and the philosophy behind it.
+status files. This document explains the architecture and the philosophy behind
+it.
 
-The canonical runbook is `.claude/skills/overnight-agent-runbook/SKILL.md`; the
-review mechanics live in `.claude/skills/pr-review-loop/SKILL.md`. This doc is
-the why-and-how that ties them together.
+The canonical runbook is `.agents/skills/overnight-agent-runbook/SKILL.md`, with
+mirrors under `.claude/`, `.cursor/`, `.grok/`, and `.opencode/`; the review
+mechanics live in `pr-review-loop`. This doc is the why-and-how that ties them
+together.
 
-## The Core Idea: The PR Is the Work Queue
+## The Core Idea: Durable Git State Is The Work Queue
 
 Earlier autonomous-coding setups bolted a coordination layer onto the agent: a
 board of cards, a dispatcher loop that handed work out, a polling daemon, and
@@ -20,7 +22,9 @@ machinery to track state that the version-control system already tracks better.
 
 Overnight inverts it. The durable state of a run is the **branch, the draft PR,
 the task row, the commits, and the review/check state** — not a transcript and
-not a side-channel database. The PR's review state *is* the work queue:
+not a side-channel database. While code is still moving, the branch diff and
+local `Verify` output drive the work. When a head is stable enough to certify,
+the PR's review/check state drives the remaining loop:
 
 - An unresolved review finding is a work item.
 - A failing required check is a work item.
@@ -28,10 +32,10 @@ not a side-channel database. The PR's review state *is* the work queue:
   condition.
 
 The agent selects what to work on directly from a `TASK_QUEUE.md` in an
-implementation plan (see `.claude/skills/prd-to-task-queue/SKILL.md` for how
+implementation plan (see `.agents/skills/prd-to-task-queue/SKILL.md` for how
 those rows get authored). Nothing dispatches work to it. Once a slice is in
-flight, the PR thread becomes the message bus and the shared state, and the agent
-drives it to done.
+certification, the PR thread becomes the message bus and the shared state, and
+the agent drives it to a clean exact head.
 
 This makes the system **harness-agnostic** (Claude Code, Codex, Cursor,
 OpenCode all work) and **GitHub-first** on the packaged PR surface. The loop only
@@ -39,9 +43,9 @@ depends on a PR that can be reviewed and a way to read review/check state; the
 shipped probe implements that for GitHub `gh`, and other providers need an
 equivalent adapter.
 
-## The Two Feedback Signals
+## The Two Certification Signals
 
-Every iteration is driven by exactly two signals:
+Certification iterations are driven by two signals:
 
 1. **The code review** — line-by-line findings from CodeRabbit (the recommended
    reviewer), or from a fresh independent reviewer session as a fallback. This is
@@ -51,16 +55,18 @@ Every iteration is driven by exactly two signals:
 
 A new commit (a new head SHA) re-runs CI. CodeRabbit re-reviews only when the PR
 is marked ready for CodeRabbit or when you explicitly request it. Otherwise the
-review signal should come from a fresh independent reviewer command/session. The
-loop converges as the agent resolves findings and fixes failures.
+review signal should come from a fresh independent reviewer command/session.
+Normal WIP pushes do not need the full hosted loop; run it when the head is
+stable, when a dependency needs exact evidence, or when unattended/high-assurance
+mode is selected.
 
 ## The Probe: `scripts/agent-signals.sh`
 
 The packaged GitHub script gathers both signals in one place so the agent never
 has to remember which `gh` commands to run or how to read them. It is the single
-per-turn probe an autonomous thread runs. For Azure DevOps, GitLab, or local-only
-flows, keep this contract and replace the implementation with provider-specific
-review/check commands.
+probe an autonomous or certifying thread runs. For Azure DevOps, GitLab, or
+local-only flows, keep this contract and replace the implementation with
+provider-specific review/check commands.
 
 ```bash
 scripts/agent-signals.sh [base]      # default base: origin/main
@@ -113,10 +119,10 @@ the probe with `SIGNALS_CLI_REVIEW_LOG=.context/coderabbit-cli-review.log`.
 Do not keep rerunning uncaptured `cr --agent` after an interrupted pass loses
 finding bodies.
 
-## The PR Comment Loop, Step by Step
+## The Certification Loop, Step by Step
 
-However many agents or PRs a thread carries, each PR is driven the same way. This
-is the engine.
+However many agents or PRs a thread carries, each stable certifiable head is
+driven the same way.
 
 1. **Open a reviewable PR early.** Establish the branch (don't rename it to match
    a suggested name), make a coherent first head, then open a **draft** PR so CI
@@ -130,7 +136,7 @@ is the engine.
    ```
    Implement with the smallest quality lens that changes the decision (see
    "Quality Lenses" below). Don't bulk-load rule sets.
-2. **Probe the review state.** Run `scripts/agent-signals.sh <base>` to pull
+2. **Probe the review state when certifying.** Run `scripts/agent-signals.sh <base>` to pull
    every unresolved signal for the current head: CodeRabbit findings when
    requested, internal-review output when configured, **and** CI check results.
    Also read any human PR comments / review threads / required reviewer votes.
@@ -171,8 +177,8 @@ another in-progress branch owns.
                                          │
                                          v
                  ┌─────────────────────────────────────────────┐
-                 │  Establish branch, make first head,          │
-                 │  open a DRAFT PR  (gh pr create by default)  │
+                 │  Establish branch, run local Verify,          │
+                 │  open/update DRAFT PR  (gh by default)       │
                  └───────────────────────┬─────────────────────┘
                                          │
                                          v
@@ -181,10 +187,10 @@ another in-progress branch owns.
         │   ┌─────────────────────────────────────────────────────┐    │
         │   │  PROBE:  scripts/agent-signals.sh <base>            │    │
         │   │                                                     │    │
-        │   │   Signal 1: CodeRabbit review  ── findings          │    │
-        │   │   Signal 2: GitHub Actions CI  ── pass/fail/pending │    │
+        │   │   Signal 1: review  ── findings / clean             │    │
+        │   │   Signal 2: CI      ── pass/fail/pending            │    │
         │   │                                                     │    │
-        │   │   => SIGNALS  ci=…  coderabbit=…                    │    │
+        │   │   => SIGNALS  ci=…  review=…                        │    │
         │   └───────────────────────────┬─────────────────────────┘    │
         │                               │                              │
         │              clean + pass?    │   no                         │
@@ -220,8 +226,29 @@ another in-progress branch owns.
                   (or readiness-prep if none is ready)
 ```
 
-The recursion on the review side is automatic: every push produces fresh signal,
-so the agent always has something concrete to read and act on each turn.
+The recursion on the review side is automatic once a head is in certification:
+every push produces fresh signal, so the agent always has something concrete to
+read and act on each turn.
+
+## Cloud Workers And Local Trains
+
+Cloud sessions are worker lanes, not replacements for local judgment. Use them
+for slices that can start from pushed Git and run with synthetic fixtures: docs,
+tests, pure source changes, refactors, and independent reviews. Do not send cloud
+workers local dirty files, credentials, Docker Desktop assumptions,
+private-network services, staging, production, or merge authority.
+
+The local controller defines each cloud slice's exact parent, `Outcome`,
+`Writes`, `Verify`, `Depends`, and `Must not` boundaries. The cloud worker pushes
+a branch or draft PR and leaves a compact closeout. The local controller fetches
+the heads, runs local-only checks when needed, and performs final certification.
+
+A local integration train is a controller-owned local branch/worktree used to
+merge compatible locally verified heads and run a combined suite before hosted CI
+is spent. It is diagnostic only: it does not make a branch landable, and fixes
+found on the train go back to the owning branch or a separately claimed repair
+slice. If the train is pushed, treat it as an ordinary integration checkpoint and
+certify it.
 
 ## Human Gates and the Merge Policy
 
@@ -400,14 +427,14 @@ loop is where the most common lens becomes a required check before reporting.
 
 ## Planning and Parallelism (the surrounding pieces)
 
-- **Planning is repo-native.** `.claude/skills/prd-to-task-queue/SKILL.md`
+- **Planning is repo-native.** `.agents/skills/prd-to-task-queue/SKILL.md`
   converts PRDs, specs, and product conversations into
   `implementation_plans/<plan>/` artifacts and `TASK_QUEUE.md` rows — **not**
   external trackers. The plan markdown is the source of truth.
 - **Parallel PRs are optional.** Serial and stacked work needs no orchestrator at
   all — one branch, one loop. To run genuinely independent PRs *in parallel*
   (each needs its own working copy), use
-  `.claude/skills/stacked-pr-orchestrator/SKILL.md`, which spins up an isolated
+  `.agents/skills/stacked-pr-orchestrator/SKILL.md` or its harness mirror, which spins up an isolated
   working copy + session per PR (git worktrees + headless sessions, Conductor
   workspaces, paseo, or manual sessions) and sequences non-main integrations by
   dependency.

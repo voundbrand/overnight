@@ -14,8 +14,13 @@ build.
   `main`/`origin/main`.
 - Mainline landing remains human-gated. Agents may integrate only agent-owned
   non-main branches after review and checks are green.
-- The draft PR plus `scripts/agent-signals.sh origin/main` is the review loop:
-  CodeRabbit review threads and GitHub checks are the source of truth.
+- During normal human-steered work, focused local `Verify` plus a clean diff is
+  the inner loop. The draft PR plus `scripts/agent-signals.sh origin/main` is the
+  certification loop for stable heads: review evidence and GitHub checks are the
+  source of truth.
+- Cloud sessions are Git-clean worker lanes. They start from pushed Git, own one
+  bounded slice, use synthetic fixtures, push a branch or draft PR, and leave
+  final integration/certification to the local controller.
 
 ## Long-Running Builds In Worktrees
 
@@ -61,8 +66,10 @@ The CI convergence signal is the required PR check set. It includes:
 - A repo-write protocol check for this protocol, migration-number checks, PR
   policy wording, and queue wiring.
 
-Every pushed head is rechecked. A red check or actionable CodeRabbit finding is
-handled before claiming another row.
+Every certifiable pushed head is rechecked. A red check or actionable review
+finding is handled before that head is reported ready. Local integration trains
+may merge locally verified compatible heads and run combined suites as diagnostic
+preflight only; they do not create landing evidence unless pushed and certified.
 
 ## Retired Mechanisms
 

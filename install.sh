@@ -9,8 +9,10 @@
 #   ./install.sh --help
 #
 # What it copies:
-#   .claude/skills/*            the portable skills (setup, engine, plan builder,
-#                               quality lenses unless --without-quality-lenses)
+#   .agents/.claude/.cursor/.grok/.opencode/skills/*
+#                               mirrored portable skills (setup, engine, plan
+#                               builder, quality lenses unless
+#                               --without-quality-lenses)
 #   scripts/agent-signals.sh    the per-turn review + CI signals probe
 #   scripts/implementation-plan-orchestrator-preflight.mjs
 #                               cheap local no-op gate before waking an orchestrator
@@ -22,8 +24,8 @@
 #
 # What it does NOT do (on purpose):
 #   - It does not edit your AGENTS.md / CLAUDE.md. Paste agents/AGENTS.snippet.md
-#     yourself and fill the knobs (see agents/AGENTS.example.md). This is a one-time
-#     decision you should make consciously.
+#     into AGENTS.md yourself and fill the knobs. If you use Claude Code, keep
+#     CLAUDE.md as a small overlay pointing back to AGENTS.md.
 set -euo pipefail
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -98,8 +100,14 @@ copy_skills_tree() {
 echo "Installing Overnight into: $TARGET"
 echo
 
-echo "• skills (.claude/skills/)"
-copy_skills_tree "$SELF_DIR/.claude/skills" "$TARGET/.claude/skills"
+echo "• skills (all supported harnesses)"
+for harness in .agents .claude .cursor .grok .opencode; do
+  if [ -d "$SELF_DIR/$harness/skills" ]; then
+    copy_skills_tree "$SELF_DIR/$harness/skills" "$TARGET/$harness/skills"
+  else
+    copy_skills_tree "$SELF_DIR/.claude/skills" "$TARGET/$harness/skills"
+  fi
+done
 
 echo "• orchestration scripts (scripts/)"
 copy_file "$SELF_DIR/scripts/agent-signals.sh" "$TARGET/scripts/agent-signals.sh"
@@ -129,7 +137,8 @@ echo
 echo "Done. ${copied} file(s) copied, ${skipped} skipped (already present; re-run with --force to overwrite)."
 echo
 echo "Next steps:"
-echo "  1. Paste agents/AGENTS.snippet.md into $TARGET/AGENTS.md (or CLAUDE.md) and fill the knobs."
+echo "  1. Paste agents/AGENTS.snippet.md into $TARGET/AGENTS.md and fill the knobs."
+echo "     If you use Claude Code, keep CLAUDE.md as a small overlay pointing to AGENTS.md."
 echo "     A filled-in example is in agents/AGENTS.example.md."
 echo "  2. Wire a reviewer: use a fresh independent reviewer by default; add"
 echo "     CodeRabbit only for deliberate ready heads (App label/keyword or 'cr' CLI)."
