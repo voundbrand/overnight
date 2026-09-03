@@ -1,12 +1,57 @@
 <!-- A FILLED-IN example of agents/AGENTS.snippet.md for one concrete repo. Copy
      it, change the values to match your repo, and paste the result into your own
-     AGENTS.md or CLAUDE.md. This file pins a hypothetical GitHub repo
+     AGENTS.md. If the repo also has CLAUDE.md, keep that file as a small
+     Claude-specific overlay pointing back to AGENTS.md. This file pins a hypothetical GitHub repo
      `<owner>/<repo>` on CodeRabbit, base `origin/main`, draft PRs via `gh`. Treat
      every value below as a placeholder to adjust, not a setting to keep. -->
 
+## Normal Conductor / local-agent work
+
+For human-steered work, default to a bounded local loop: branch or worktree
+isolation, explicit write surfaces, focused local `Verify`, clean diffs, and a
+draft PR once the head is coherent. Do not run strict signal probes, request
+CodeRabbit, post durable evidence markers, or ACK/classify every PR comment on
+each intermediate push unless the manifest explicitly selects unattended or
+high-assurance mode for that head.
+
+Before presenting a PR as ready to land, switch to certification: reconcile to
+the recorded parent, push the exact head, require hosted CI for that head/base,
+obtain exact-head review, run `scripts/agent-signals.sh origin/main`, and resolve
+or classify human feedback. Local integration trains are diagnostic only; they
+may find conflicts and run combined local suites, but they do not make a branch
+landable.
+
+## Cloud worker lanes
+
+Use cloud sessions as disposable Linux workers for slices that can run from
+pushed Git source plus synthetic fixtures. They are useful for parallel progress
+and for work that should continue while the local machine sleeps. They do not
+inherit local dirty files, browser state, Docker Desktop, private network access,
+or credentials.
+
+The local controller defines the exact parent, branch, `Outcome`, `Writes`,
+`Verify`, `Depends`, and `Must not` boundaries; the cloud worker implements that
+bounded slice, runs local Linux verification, pushes a branch or draft PR, and
+leaves a compact closeout. The local controller fetches worker heads, performs
+local integration trains or local-only checks, and owns final certification and
+human landing gates.
+
+## AGENTS.md / CLAUDE.md hygiene
+
+Treat `AGENTS.md` as the shared contract across Codex, Claude Code, Cursor Agent,
+OpenCode, and other coding agents. If the repo also has `CLAUDE.md`, keep it
+small: it should point to `AGENTS.md` and contain only Claude-specific
+exceptions. Shared workflow, safety, review, and queue rules belong in
+`AGENTS.md` or mirrored skills under every harness directory the repo uses.
+
+Use skills for procedures, verification recipes, review rubrics, scripts, and
+long reference material. Use hooks, pre-push guards, or CI for hard rules that
+must be enforced. Use local ignored files for personal or branch-specific notes.
+
 ## Autonomous / overnight work
 
-Unattended implementation work follows `.claude/skills/overnight-agent-runbook/SKILL.md`:
+Unattended implementation work follows `.agents/skills/overnight-agent-runbook/SKILL.md`
+or the mirrored `.claude/skills/overnight-agent-runbook/SKILL.md`:
 pick one reviewable slice, own the branch through an agnostic code review, push to
 your own task branch and open a draft PR for visibility. Continue through the next
 launch-ready independent slice after each green/clean slice. If no row is
@@ -50,7 +95,7 @@ closeout in the final response.
 
 ### The two signals, one probe
 
-Drive every iteration off `scripts/agent-signals.sh origin/main`. It gathers both
+Drive certification iterations off `scripts/agent-signals.sh origin/main`. It gathers both
 feedback signals — **code review** (CodeRabbit when requested, or internal
 review) and the **GitHub Actions checks** (required-check signal) — and prints
 one verdict line:
@@ -63,7 +108,7 @@ scripts/agent-signals.sh origin/main
 # CAMPAIGN CONTINUATION: the goal/task queue decides whether to claim the next row, readiness-prep, or stop.
 ```
 
-Each turn: run the probe, **classify** every finding (`actionable | invalid |
+Each certification turn: run the probe, **classify** every finding (`actionable | invalid |
 duplicate | blocked | out-of-scope`), fix only the valid actionable ones plus any
 failing check, push a new head — which re-runs CI and any requested review — then
 re-probe. Repeat until `review=clean AND ci=pass` and the required approvals
@@ -83,7 +128,7 @@ here so an unattended agent never has to guess them.
 | Base branch | `origin/main` (any non-main base also works — set it once) |
 | Remote / PR surface | GitHub `gh`, **draft PRs only** (packaged signals probe); Azure DevOps / GitLab / local-only require a custom signals probe |
 | Review tool | Fresh independent reviewer by default; CodeRabbit App by `coderabbit-ready` label; `cr` CLI only when deliberate |
-| Quality lens source | `docs/quality-lenses.md` |
+| Quality lens source | `docs/quality-lenses.md` + mirrored skills |
 | Task source of truth | `implementation_plans/<plan>/TASK_QUEUE.md` |
 
 Open work as a draft PR against the base and let the loop run:
@@ -115,7 +160,7 @@ Engineering quality lens:
 ## Boundaries
 
 Agents may merge/integrate only agent-owned non-`main` branches after green gates
-(CodeRabbit clean **and** CI pass **and** required approvals).
+(review clean **and** CI pass **and** required approvals).
 
 **Human-gated — stop and wait:** merge / complete / squash / fast-forward a PR to
 `main` or any protected base; a non-draft PR targeting `main`; bypassing branch

@@ -1,10 +1,12 @@
 # Quickstart — adopt Overnight in a GitHub repo
 
-Get an unattended, review-driven PR loop running in your repo from zero. The driver
-is the **pull request and its review**: an agent opens a draft PR early, then loops
-— gather review signals, fix only valid findings, push a new head, re-probe — until
-the reviewer is clean **and** CI passes **and** required approvals exist. No kanban
-board, no dispatcher, no polling daemon. Merge to `main` stays human-gated.
+Get a modern agent workflow running in your repo from zero. In normal
+human-steered work, agents use bounded branches, focused local `Verify`, cloud
+worker lanes when useful, and draft PRs. When a head is stable, they switch to
+the certification loop: gather review signals, fix only valid findings, push a
+new head, re-probe, and stop only when review is clean **and** CI passes **and**
+required approvals exist. No kanban board, no dispatcher, no polling daemon.
+Merge to `main` stays human-gated.
 
 Targets GitHub (`gh`) by default. Azure DevOps, GitLab, and local-only flows can
 use the same model with a replacement signals probe. Works with any harness
@@ -21,9 +23,10 @@ git --version
 
 ## 1. Install into your repo
 
-Run the installer against the repo you want to automate. It copies `.claude/skills`,
-`scripts/agent-signals.sh`, `docs/`, `.coderabbit.example.yaml`, and the `.github`
-examples into the target.
+Run the installer against the repo you want to automate. It copies mirrored
+skills into `.agents/`, `.claude/`, `.cursor/`, `.grok/`, and `.opencode/`,
+plus `scripts/agent-signals.sh`, `docs/`, `.coderabbit.example.yaml`, and the
+`.github` examples into the target.
 
 ```bash
 ./install.sh /path/to/your-repo
@@ -33,7 +36,8 @@ cd /path/to/your-repo
 Verify the probe and skills landed:
 
 ```bash
-ls .claude/skills/                      # overnight-agent-runbook, pr-review-loop, tdd, ...
+ls .agents/skills/                      # overnight-agent-runbook, pr-review-loop, tdd, ...
+ls .claude/skills/                      # Claude Code mirror
 test -x scripts/agent-signals.sh && echo "probe ready"
 ```
 
@@ -89,12 +93,14 @@ PR has the ready marker; otherwise rely on the internal reviewer + CI).
 
 ## 3. Point your agent at the runbook
 
-Paste the snippet from `.claude/skills/overnight-agent-runbook/template/AGENTS_SNIPPET.md`
-into the target repo's `AGENTS.md` (or `CLAUDE.md`) and **fill the knobs**. This
-tells every agent session how to run the loop and what it must never do.
+Paste the snippet from `.agents/skills/overnight-agent-runbook/template/AGENTS_SNIPPET.md`
+into the target repo's `AGENTS.md` and **fill the knobs**. If the repo also uses
+Claude Code, keep `CLAUDE.md` as a small overlay that points back to `AGENTS.md`.
+This tells every agent session how to work locally, when to use cloud workers,
+when to certify, and what it must never do.
 
 ```bash
-cat .claude/skills/overnight-agent-runbook/template/AGENTS_SNIPPET.md >> AGENTS.md
+cat .agents/skills/overnight-agent-runbook/template/AGENTS_SNIPPET.md >> AGENTS.md
 $EDITOR AGENTS.md                        # fill the table
 ```
 
@@ -103,7 +109,8 @@ A filled example:
 ```markdown
 ## Autonomous / overnight work
 
-Unattended implementation work follows `.claude/skills/overnight-agent-runbook/SKILL.md`.
+Unattended implementation work follows `.agents/skills/overnight-agent-runbook/SKILL.md`
+or the mirrored `.claude/skills/overnight-agent-runbook/SKILL.md`.
 
 | Knob | Value |
 |---|---|
@@ -148,7 +155,12 @@ humans.)
 
 ---
 
-## 5. Start an implementation slice
+## 5. Start an implementation slice locally
+
+In normal mode, use the local loop first. Run the row's focused `Verify`, keep
+`git diff --check` clean, and open/update the draft PR when the branch is
+coherent. Save the hosted review/signals loop for final certification or for
+heads that other branches need as exact evidence.
 
 Branch, then open a **draft PR early** so CI runs and the reviewer starts:
 
@@ -170,7 +182,7 @@ gh pr create --draft --base main --fill
 
 ---
 
-## 6. Run the loop signals
+## 6. Certify a stable head
 
 One GitHub-first probe gathers **both** feedback signals — code review and the
 GitHub Actions checks — and prints the exit condition:
@@ -187,7 +199,7 @@ SLICE READY WHEN: review=clean (CodeRabbit or internal reviewer) AND ci=pass -> 
 CAMPAIGN CONTINUATION: the goal/task queue decides whether to claim the next row, readiness-prep, or stop.
 ```
 
-The agent's loop is: run the probe → for each finding, classify it
+The certification loop is: run the probe → for each finding, classify it
 (**actionable / invalid / duplicate / blocked / out-of-scope**) → fix only valid
 actionable ones → push a new head (which re-triggers review + CI) → re-probe.
 Repeat until `review=clean AND ci=pass` and required approvals exist. Then it
@@ -233,10 +245,25 @@ contract on an interval until the exit condition holds.
 
 Fill the full six-field contract (Outcome, Verification surface, Constraints,
 Boundaries, Iteration policy, Blocked stop) from the template at
-`.claude/skills/overnight-agent-runbook/template/goal-prompt.md`. If no row is
+`.agents/skills/overnight-agent-runbook/template/goal-prompt.md`. If no row is
 launch-ready, the agent authors the missing brief instead of stopping; it stops only
 when nothing can be implemented, made ready, or advanced with a documented reversible
 assumption — or a real human gate is hit.
+
+---
+
+## 8. Use cloud workers without losing the local workflow
+
+Cloud sessions are best for slices that can run from pushed Git plus synthetic
+fixtures: docs, tests, source-only refactors, and independent reviews. The local
+controller defines the exact parent, `Outcome`, `Writes`, `Verify`, `Depends`,
+and `Must not` list. The cloud worker pushes a branch or draft PR and leaves a
+compact closeout. The local controller fetches those heads, runs local-only checks
+or a local integration train, and owns final certification and human landing.
+
+Keep dirty-state recovery, Docker Desktop, browser sessions, credentials,
+private-network services, staging, production, and provider mutations on the
+local/human lane unless you have a separately approved cloud-safe connector.
 
 ---
 
@@ -245,6 +272,10 @@ assumption — or a real human gate is hit.
 - A draft PR per slice, reviewer clean, CI green, required approvals present.
 - A compact closeout per slice; durable state lives in the branch/PR/queue, not the
   transcript.
+- Normal WIP pushes validated locally first; hosted review/signals reserved for
+  stable certifiable heads.
+- Cloud workers only for Git-clean, synthetic-fixture slices; the local
+  controller handles integration, local-only checks, and landing decisions.
 - Between slices in a UI-backed runtime (e.g. Conductor — one example), start fresh:
   the next session re-orients from branch/PR/queue/brief/probe output.
 - Quiet overnight mode: no routine progress narration, long logs, full diffs, or

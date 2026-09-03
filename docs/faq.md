@@ -35,21 +35,37 @@ alone).
 
 It's **harness-agnostic**: **Claude Code**, **Codex**, **Cursor**, and
 **OpenCode**. Skills in `.claude/skills/` are auto-discovered by Claude Code
-(invoke as `/<name>`); other harnesses resolve them via the
-`.claude/skills/...` paths referenced from `AGENTS.md`.
+(invoke as `/<name>`). The same skills are mirrored under `.agents/skills/`,
+`.cursor/skills/`, `.grok/skills/`, and `.opencode/skills/`; `AGENTS.md` is the
+shared contract, while `CLAUDE.md` should be only a small Claude-specific overlay.
+
+## How do cloud sessions fit?
+
+Use them as disposable Linux worker lanes. They are good for slices that can run
+from pushed Git plus synthetic fixtures: docs, tests, source-only changes, and
+independent reviews. They should not depend on the local dirty tree, Docker
+Desktop, browser state, private-network services, credentials, staging,
+production, provider mutation, or merge authority. The local controller defines
+the slice, fetches the pushed head, runs local-only checks or a local integration
+train, and owns final certification.
 
 ## Can it run multiple PRs in parallel?
 
 **Yes, optionally.** The per-PR engine (decompose, draft PR, loop to clean +
 green, never merge `main`) lives in
-`.claude/skills/overnight-agent-runbook/` and needs **no orchestrator** for
-serial or stacked work.
+`.agents/skills/overnight-agent-runbook/` and its harness mirrors. It needs **no
+orchestrator** for serial or stacked work.
 
 To run **independent** PRs at once, use
-`.claude/skills/stacked-pr-orchestrator/` — it gives each PR an isolated working
-copy and session and sequences non-`main` integrations by dependency. It's
-tool-agnostic: git worktrees + headless sessions, Conductor workspaces, paseo, or
-manual sessions.
+`.agents/skills/stacked-pr-orchestrator/` or its harness mirror — it gives each PR
+an isolated working copy and session and sequences non-`main` integrations by
+dependency. It's tool-agnostic: git worktrees + headless sessions, Conductor
+workspaces, cloud sessions, paseo, or manual sessions.
+
+A local integration train is also available as a preflight accelerator: a local
+controller merges locally verified compatible heads and runs a combined local
+suite before hosted CI is spent. It is diagnostic only; a branch is not landable
+until its real parent/head receives the normal certification evidence.
 
 ## Does it need GitHub?
 

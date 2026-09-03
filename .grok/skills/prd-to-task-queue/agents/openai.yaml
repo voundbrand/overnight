@@ -1,0 +1,4 @@
+interface:
+  display_name: "PRD to Task Queue"
+  short_description: "Convert PRDs and plans into repo-native TASK_QUEUE rows."
+  default_prompt: "Convert this PRD or plan into repo-native TASK_QUEUE.md rows with traceability and validation."

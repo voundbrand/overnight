@@ -4,10 +4,11 @@
 
 **An autonomous, review-driven workbench for AI coding agents.**
 
-Point a coding agent at a task queue. It opens draft pull requests, loops on
-automated code review until checks are green and the reviewer is clean, integrates
-its own non-`main` branches — and **never merges to `main`**. It runs unattended,
-overnight, with no kanban board, no dispatcher, and no polling daemon.
+Point coding agents at a task queue. During normal development they use bounded
+branches, local verification, cloud worker lanes, and draft pull requests. When a
+head is stable, Overnight switches to exact-head certification: hosted CI,
+review, and human landing gates. It runs unattended when asked, with no kanban
+board, no dispatcher, and no polling daemon.
 
 <br/>
 
@@ -24,15 +25,16 @@ kanban board, a dispatcher that hands out work, polling daemons, status files th
 have to be kept in sync. That machinery is where these systems rot — it drifts from
 reality, it needs babysitting, and it is the part that breaks at 3am.
 
-Overnight deletes all of it. The insight:
+Overnight deletes all of it. The durable-state insight still holds:
 
-> **The pull request and its review *are* the work queue.**
+> **Branches, task rows, draft PRs, checks, and review evidence are the work queue.**
 
-An agent opens a draft PR early, then loops on review feedback — fixing valid
-findings, pushing a new head, getting re-reviewed — until the reviewer is clean and
-CI is green. The PR's review state is the only state that matters. There is nothing
-else to keep in sync, because the branch, the PR, the checks, and the task row are
-the durable state. Sessions are disposable.
+An agent does not need a side database to know what to do next. While code is
+still moving, it runs the focused local `Verify` command and keeps the branch
+reviewable. When the head is ready to certify, the PR/review/check state becomes
+the exact evidence loop: fix valid findings, push a new head, re-review, and stop
+only when review is clean and CI is green. Sessions are disposable because the
+branch, PR, checks, commits, and task row are durable.
 
 This is the operating model distilled from running real implementation work
 unattended across many slices and many nights. It is **harness-agnostic** (Claude
@@ -50,7 +52,9 @@ adapter for that provider.
                   │  TASK_QUEUE  (no board, no dispatcher)          │
                   └───────────────────────┬────────────────────────┘
                                           │
-                          open a DRAFT PR early (GitHub `gh` by default)
+                  local Verify, optional cloud worker / train preflight
+                                          │
+                          open/update a DRAFT PR (GitHub `gh` by default)
                                           │
               ┌───────────────────────────▼───────────────────────────┐
               │                THE LOOP (per head SHA)                 │
@@ -66,7 +70,7 @@ adapter for that provider.
               │   push a new head  ──►  re-review + re-run CI          │
               └───────────────────────────┬───────────────────────────┘
                                           │
-              review = clean  AND  ci = pass  AND  approvals present
+              exact head: review = clean  AND  ci = pass  AND  approvals present
                                           │
         ┌─────────────────────────────────┴─────────────────────────────────┐
         │  Leave the main-targeted PR ready for a HUMAN to merge,            │
@@ -77,25 +81,27 @@ adapter for that provider.
                   ── main is HUMAN-GATED. The agent never merges it. ──
 ```
 
-Two feedback signals (review comments + CI checks), gathered each turn by one probe,
-`scripts/agent-signals.sh`, which prints a single `SIGNALS ci=… review=…` line
-and the exit condition. Full detail in **[docs/how-it-works.md](docs/how-it-works.md)**.
+Two certification signals (review comments + CI checks) are gathered by one
+probe, `scripts/agent-signals.sh`, which prints a single
+`SIGNALS ci=… review=…` line and the exit condition. Full detail in
+**[docs/how-it-works.md](docs/how-it-works.md)**.
 
 ## What's in the box
 
 | Component | Path | What it does |
 |---|---|---|
-| **Interactive setup** | `.claude/skills/overnight-setup/` | Inspect a target repo, ask the missing setup questions, install/upgrade the library, wire AGENTS/package scripts, and validate. |
-| **Overnight runbook** | `.claude/skills/overnight-agent-runbook/` | The canonical operating model + a prompt library (`template/`). The engine. |
-| **PR review loop** | `.claude/skills/pr-review-loop/` | The review mechanics: classify findings, fix the valid ones, re-review the new head. |
-| **Stacked-PR orchestrator** | `.claude/skills/stacked-pr-orchestrator/` | *Optional.* Run multiple PRs in parallel through the human-selected harness's native agent/session spawning. |
+| **Interactive setup** | `.agents/skills/overnight-setup/` and mirrors | Inspect a target repo, ask the missing setup questions, install/upgrade the library, wire AGENTS/package scripts, and validate. |
+| **Workflow modernizer** | `.agents/skills/agent-workflow-modernizer/` and mirrors | Clean up an existing repo's `AGENTS.md`, `CLAUDE.md`, skills, cloud-worker lanes, local trains, and certification gates. |
+| **Overnight runbook** | `.agents/skills/overnight-agent-runbook/` and mirrors | The canonical operating model + a prompt library (`template/`). The engine for unattended/high-assurance work. |
+| **PR review loop** | `.agents/skills/pr-review-loop/` and mirrors | The review mechanics: classify findings, fix the valid ones, re-review the new head. |
+| **Stacked-PR orchestrator** | `.agents/skills/stacked-pr-orchestrator/` and mirrors | *Optional.* Run multiple PRs in parallel through the human-selected harness's native agent/session spawning. |
 | **Signals probe** | `scripts/agent-signals.sh` | One per-turn command that gathers review + CI and prints the exit condition. |
 | **Orchestrator preflight** | `scripts/implementation-plan-orchestrator-preflight.mjs` | Cheap local no-op gate that parses the task queue and `.context` scratch files before spending an agent message. |
-| **PRD → task queue** | `.claude/skills/prd-to-task-queue/` | Turn a PRD / spec / conversation into repo-native plan docs + `TASK_QUEUE.md` rows. |
-| **Implementation plan builder** | `.claude/skills/implementation-plan-builder/` | Create or upgrade a complete plan folder: index, master plan, queue, decisions, launch-ready briefs, and preflight wiring. |
-| **Plan wiki** | `.claude/skills/implementation-plan-wiki/` | Build a static site from the plan markdown for humans to browse. |
-| **Quality lenses** | `.claude/skills/{engineering-quality-lens,tdd,diagnose,architecture-review,code-structure}/` | Pick the smallest engineering discipline that changes the decision. |
-| **Agent contract** | `agents/AGENTS.snippet.md` + `AGENTS.example.md` | The section you paste into your repo's `AGENTS.md`/`CLAUDE.md`. |
+| **PRD → task queue** | `.agents/skills/prd-to-task-queue/` and mirrors | Turn a PRD / spec / conversation into repo-native plan docs + `TASK_QUEUE.md` rows. |
+| **Implementation plan builder** | `.agents/skills/implementation-plan-builder/` and mirrors | Create or upgrade a complete plan folder: index, master plan, queue, decisions, launch-ready briefs, and preflight wiring. |
+| **Plan wiki** | `.agents/skills/implementation-plan-wiki/` and mirrors | Build a static site from the plan markdown for humans to browse. |
+| **Quality lenses** | `.agents/skills/{engineering-quality-lens,tdd,diagnose,architecture-review,code-structure}/` and mirrors | Pick the smallest engineering discipline that changes the decision. |
+| **Agent contract** | `agents/AGENTS.snippet.md` + `AGENTS.example.md` | The section you paste into your repo's `AGENTS.md`; `CLAUDE.md` should stay a small overlay. |
 | **Runtime reliability notes** | `docs/runtime-reliability.md` | Watchdog/cache/background-shell guidance for long-running parallel agents. |
 | **Reviewer + CI config** | `.coderabbit.example.yaml`, `.github/` | Templates for CodeRabbit, a PR template, and an example CI workflow. |
 | **Example plan** | `examples/implementation_plans/example_plan/` | A neutral, end-to-end example of the plan format. |
@@ -115,8 +121,9 @@ cd overnight
 #    • Install the `coderabbit` CLI (`cr`) for deliberate paid/rate-limited reviews
 
 # 3. Tell your agent the rules
-#    Paste agents/AGENTS.snippet.md into your repo's AGENTS.md (or CLAUDE.md) and
-#    fill the knobs table (base branch, PR surface, review tool, task source).
+#    Paste agents/AGENTS.snippet.md into your repo's AGENTS.md and fill the
+#    knobs table (base branch, PR surface, review tool, task source).
+#    If you use Claude Code, keep CLAUDE.md as a small overlay pointing back to AGENTS.md.
 #    See agents/AGENTS.example.md for a filled-in version.
 
 # 4. Create a task queue (or generate one with the prd-to-task-queue skill)
@@ -131,7 +138,7 @@ cd overnight
 #
 #    Only wake a Codex/Claude/OpenCode orchestrator when it prints ACTION_REQUIRED.
 
-# 6. Start a slice: branch, open a DRAFT PR, watch the signals
+# 6. Start a slice: branch, run local Verify, open a DRAFT PR, watch the signals
 cd /path/to/your-repo
 git switch -c feat/my-first-slice
 gh pr create --draft --base main --fill
@@ -152,8 +159,10 @@ Full walkthrough: **[docs/quickstart.md](docs/quickstart.md)**.
 ## Requirements
 
 - **A coding-agent harness** — Claude Code, Codex, Cursor, or OpenCode. Skills in
-  `.claude/skills/` are auto-discovered by Claude Code (invoke as `/<name>`); other
-  harnesses resolve them via the `.claude/skills/...` paths referenced from `AGENTS.md`.
+  `.claude/skills/` are auto-discovered by Claude Code (invoke as `/<name>`).
+  The same packaged skills are mirrored under `.agents/skills/`, `.cursor/skills/`,
+  `.grok/skills/`, and `.opencode/skills/` so `AGENTS.md` can be the shared
+  contract across harnesses.
 - **Git** and a remote. **GitHub** (`gh` CLI) is the packaged default. Azure DevOps,
   GitLab, and local-only flows are portable targets, but require a provider-specific
   replacement for the shipped `gh` signals probe.
@@ -221,9 +230,12 @@ overnight/
 ├── LICENSE                       ← MIT
 ├── install.sh                    ← copies the system into a target repo
 ├── agents/
-│   ├── AGENTS.snippet.md         ← paste into your repo's AGENTS.md / CLAUDE.md
+│   ├── AGENTS.snippet.md         ← paste into your repo's AGENTS.md
 │   └── AGENTS.example.md         ← a filled-in example
-├── .claude/skills/               ← the portable skills (the engine + quality lenses)
+├── .agents/skills/               ← shared agent skills for Codex-style harnesses
+├── .claude/skills/               ← Claude Code mirror of the portable skills
+├── .cursor/.grok/.opencode/skills/
+│                                   ← mirrors for additional harnesses
 ├── scripts/agent-signals.sh      ← the per-turn signals probe
 ├── scripts/implementation-plan-orchestrator-preflight.mjs
 │                                   ← cheap local no-op gate before waking agents
